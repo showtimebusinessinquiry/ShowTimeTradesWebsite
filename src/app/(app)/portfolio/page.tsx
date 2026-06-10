@@ -147,16 +147,18 @@ export default function PortfolioPage() {
       const total_market_value = equityPos.reduce((s, p) => s + (priceMap[p.ticker] ?? p.entry_price) * p.quantity, 0)
       const unrealized_pnl = total_market_value - total_cost_basis
       const today = new Date().toISOString().slice(0, 10)
-      supabase.from('portfolio_snapshots').upsert({
-        user_id: user.id,
-        snapshot_date: today,
-        total_market_value: parseFloat(total_market_value.toFixed(4)),
-        total_cost_basis: parseFloat(total_cost_basis.toFixed(4)),
-        unrealized_pnl: parseFloat(unrealized_pnl.toFixed(4)),
-        position_count: equityPos.length,
-      }, { onConflict: 'user_id,snapshot_date' })
-        .then(() => loadSnapshots())
-        .catch(err => console.error('[Portfolio] snapshot upsert error:', err))
+      ;(async () => {
+        const { error } = await supabase.from('portfolio_snapshots').upsert({
+          user_id: user.id,
+          snapshot_date: today,
+          total_market_value: parseFloat(total_market_value.toFixed(4)),
+          total_cost_basis: parseFloat(total_cost_basis.toFixed(4)),
+          unrealized_pnl: parseFloat(unrealized_pnl.toFixed(4)),
+          position_count: equityPos.length,
+        }, { onConflict: 'user_id,snapshot_date' })
+        if (error) { console.error('[Portfolio] snapshot upsert error:', error); return }
+        await loadSnapshots()
+      })()
     }
   }
 
