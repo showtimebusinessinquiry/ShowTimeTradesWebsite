@@ -26,6 +26,8 @@ export default function CalendarPage() {
     return new Date(d.getFullYear(), d.getMonth(), 1)
   })
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [filterTicker, setFilterTicker] = useState('')
+  const [filterStrategy, setFilterStrategy] = useState('')
 
   useEffect(() => {
     if (!user) { setLoading(false); return }
@@ -40,14 +42,19 @@ export default function CalendarPage() {
       })
   }, [user])
 
+  const filteredTrades = useMemo(() => trades.filter(t =>
+    (!filterTicker || t.ticker.includes(filterTicker.toUpperCase())) &&
+    (!filterStrategy || t.strategy === filterStrategy)
+  ), [trades, filterTicker, filterStrategy])
+
   const tradesByDate = useMemo(() => {
     const map: Record<string, Trade[]> = {}
-    for (const t of trades) {
+    for (const t of filteredTrades) {
       if (!map[t.date]) map[t.date] = []
       map[t.date].push(t)
     }
     return map
-  }, [trades])
+  }, [filteredTrades])
 
   const pnlByDate = useMemo(() => {
     const map: Record<string, number> = {}
@@ -86,8 +93,15 @@ export default function CalendarPage() {
       .reduce((sum, [, ts]) => sum + ts.length, 0)
   }, [tradesByDate, year, month])
 
+  const strategyOptions = useMemo(() => {
+    const seen = new Set<string>()
+    trades.forEach(t => seen.add(t.strategy))
+    return Array.from(seen).sort()
+  }, [trades])
+
   const today = new Date().toISOString().slice(0, 10)
   const selectedTrades = selectedDate ? (tradesByDate[selectedDate] ?? []) : []
+  const isFiltered = !!filterTicker || !!filterStrategy
 
   if (loading) {
     return (
@@ -106,7 +120,7 @@ export default function CalendarPage() {
       />
 
       {/* Month nav + summary */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setCurrentMonth(new Date(year, month - 1, 1))}
@@ -132,6 +146,40 @@ export default function CalendarPage() {
               {fmtPnl(monthlyPnl)} month
             </span>
           </div>
+        )}
+      </div>
+
+      {/* Filter bar */}
+      <div className="flex items-center gap-3 mb-5 flex-wrap">
+        <input
+          type="text"
+          value={filterTicker}
+          onChange={e => setFilterTicker(e.target.value.toUpperCase())}
+          placeholder="Filter by ticker…"
+          className="bg-surface border border-default rounded-lg px-3 py-1.5 text-xs text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors w-36 font-mono"
+        />
+        <select
+          value={filterStrategy}
+          onChange={e => setFilterStrategy(e.target.value)}
+          className="bg-surface border border-default rounded-lg px-3 py-1.5 text-xs text-text-secondary focus:outline-none focus:border-accent transition-colors"
+        >
+          <option value="">All strategies</option>
+          {strategyOptions.map(s => (
+            <option key={s} value={s}>{STRATEGY_LABELS[s] ?? s}</option>
+          ))}
+        </select>
+        {isFiltered && (
+          <button
+            onClick={() => { setFilterTicker(''); setFilterStrategy('') }}
+            className="text-xs text-text-muted hover:text-accent transition-colors"
+          >
+            Clear filters
+          </button>
+        )}
+        {isFiltered && (
+          <span className="text-xs text-text-muted font-mono">
+            {filteredTrades.length} / {trades.length} trades shown
+          </span>
         )}
       </div>
 
@@ -251,30 +299,34 @@ export default function CalendarPage() {
               {fmtPnl(pnlByDate[selectedDate] ?? 0)}
             </span>
           </div>
-          <div className="divide-y divide-default/30">
-            {selectedTrades.map(t => (
-              <div key={t.id} className="px-5 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono font-bold text-sm text-text-primary">{t.ticker}</span>
-                  <span className="font-mono text-[10px] text-text-muted border border-default/40 rounded px-1.5 py-0.5 uppercase tracking-wide">
-                    {STRATEGY_LABELS[t.strategy] ?? t.strategy}
-                  </span>
-                  {t.strike && (
-                    <span className="text-xs text-text-muted">${t.strike} strike</span>
-                  )}
+          {selectedTrades.length === 0 ? (
+            <div className="px-5 py-6 text-center text-xs text-text-muted">No trades match the current filters for this day.</div>
+          ) : (
+            <div className="divide-y divide-default/30">
+              {selectedTrades.map(t => (
+                <div key={t.id} className="px-5 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono font-bold text-sm text-text-primary">{t.ticker}</span>
+                    <span className="font-mono text-[10px] text-text-muted border border-default/40 rounded px-1.5 py-0.5 uppercase tracking-wide">
+                      {STRATEGY_LABELS[t.strategy] ?? t.strategy}
+                    </span>
+                    {t.strike && (
+                      <span className="text-xs text-text-muted">${t.strike} strike</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4 text-xs">
+                    <span className="text-text-muted font-mono">
+                      {t.quantity}× @${t.entry_price}
+                      {t.exit_price ? ` → $${t.exit_price}` : ''}
+                    </span>
+                    <span className={`font-mono font-semibold min-w-[60px] text-right ${(t.pnl ?? 0) >= 0 ? 'text-gain' : t.pnl != null ? 'text-loss' : 'text-text-muted'}`}>
+                      {t.pnl != null ? fmtPnl(t.pnl) : 'Open'}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-4 text-xs">
-                  <span className="text-text-muted font-mono">
-                    {t.quantity}× @${t.entry_price}
-                    {t.exit_price ? ` → $${t.exit_price}` : ''}
-                  </span>
-                  <span className={`font-mono font-semibold min-w-[60px] text-right ${(t.pnl ?? 0) >= 0 ? 'text-gain' : t.pnl != null ? 'text-loss' : 'text-text-muted'}`}>
-                    {t.pnl != null ? fmtPnl(t.pnl) : 'Open'}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

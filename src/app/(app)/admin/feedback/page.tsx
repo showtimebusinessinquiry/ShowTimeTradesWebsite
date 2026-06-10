@@ -38,6 +38,8 @@ export default function AdminFeedbackPage() {
   const [selected, setSelected] = useState<FeedbackWithEmail | null>(null)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [updating, setUpdating] = useState<string | null>(null)
+  const [replyDraft, setReplyDraft] = useState('')
+  const [savingReply, setSavingReply] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -79,6 +81,20 @@ export default function AdminFeedbackPage() {
     setTickets(prev => prev.map(t => t.id === id ? { ...t, status } : t))
     if (selected?.id === id) setSelected(s => s ? { ...s, status } : s)
     setUpdating(null)
+  }
+
+  const saveReply = async () => {
+    if (!selected || !replyDraft.trim()) return
+    setSavingReply(true)
+    const now = new Date().toISOString()
+    await supabase
+      .from('feedback')
+      .update({ admin_response: replyDraft.trim(), responded_at: now, updated_at: now })
+      .eq('id', selected.id)
+    const updated = { ...selected, admin_response: replyDraft.trim(), responded_at: now }
+    setTickets(prev => prev.map(t => t.id === selected.id ? updated : t))
+    setSelected(updated)
+    setSavingReply(false)
   }
 
   const filtered = useMemo(
@@ -159,7 +175,11 @@ export default function AdminFeedbackPage() {
             filtered.map(ticket => (
               <button
                 key={ticket.id}
-                onClick={() => setSelected(selected?.id === ticket.id ? null : ticket)}
+                onClick={() => {
+                  const next = selected?.id === ticket.id ? null : ticket
+                  setSelected(next)
+                  setReplyDraft(next?.admin_response ?? '')
+                }}
                 className={`w-full text-left bg-surface border rounded-xl px-4 py-3 transition-all hover:border-default/80 ${
                   selected?.id === ticket.id ? 'border-accent' : 'border-default'
                 }`}
@@ -228,6 +248,27 @@ export default function AdminFeedbackPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <div className="text-xs text-text-muted tracking-wide uppercase mb-2">Internal Notes</div>
+                {selected.responded_at && (
+                  <div className="text-[10px] text-text-muted mb-2">Last updated {selected.responded_at.slice(0, 10)}</div>
+                )}
+                <textarea
+                  value={replyDraft}
+                  onChange={e => setReplyDraft(e.target.value)}
+                  rows={4}
+                  placeholder="Add internal notes or response…"
+                  className="w-full bg-bg border border-default rounded-lg px-3 py-2 text-xs text-text-primary placeholder-text-muted focus:outline-none focus:border-accent resize-none transition-colors"
+                />
+                <button
+                  onClick={saveReply}
+                  disabled={savingReply || !replyDraft.trim()}
+                  className="mt-2 w-full text-xs py-2 px-3 rounded-lg bg-accent/10 text-accent border border-accent/30 hover:bg-accent/20 transition-all disabled:opacity-40"
+                >
+                  {savingReply ? 'Saving…' : 'Save Notes'}
+                </button>
               </div>
             </div>
           </div>

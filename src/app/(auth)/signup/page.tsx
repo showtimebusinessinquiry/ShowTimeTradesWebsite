@@ -38,7 +38,7 @@ export default function SignupPage() {
       const { count } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true })
-        .eq('username', value.toLowerCase())
+        .eq('username', value.trim().toLowerCase())
       setUsernameStatus((count ?? 0) > 0 ? 'taken' : 'available')
     }, 400)
   }
@@ -70,7 +70,7 @@ export default function SignupPage() {
     const { count } = await supabase
       .from('profiles')
       .select('*', { count: 'exact', head: true })
-      .eq('username', username.toLowerCase())
+      .eq('username', username.trim().toLowerCase())
 
     if ((count ?? 0) > 0) {
       setError('That username was just taken. Please choose another.')
@@ -83,8 +83,7 @@ export default function SignupPage() {
       email,
       password,
       options: {
-        // Stored in user_metadata; the DB trigger mirrors this to the profiles table
-        data: { username: username.toLowerCase() },
+        data: { username: username.trim().toLowerCase() },
       },
     })
 
@@ -95,6 +94,23 @@ export default function SignupPage() {
     }
 
     if (data.session) {
+      // Verify profile was created — guards against username race condition
+      let profile = null
+      for (let i = 0; i < 3; i++) {
+        await new Promise(r => setTimeout(r, 1000))
+        const { data: p } = await supabase
+          .from('profiles')
+          .select('user_id')
+          .eq('user_id', data.session.user.id)
+          .maybeSingle()
+        if (p) { profile = p; break }
+      }
+      if (!profile) {
+        await supabase.auth.signOut()
+        setError('That username was just taken. Please choose another and try again.')
+        setLoading(false)
+        return
+      }
       router.push('/dashboard')
     } else {
       setEmailSent(true)

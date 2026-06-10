@@ -231,6 +231,14 @@ export interface Database {
           price_target: number | null
           current_price: number | null
           is_flagged: boolean
+          list_id: string | null
+          bias: 'Bullish' | 'Bearish' | 'Neutral' | null
+          status_type: 'Watching' | 'Ready' | 'In Trade' | 'Avoid' | null
+          entry_price: number | null
+          target_price: number | null
+          stop_price: number | null
+          earnings_date: string | null
+          thesis: string | null
           created_at: string
           updated_at: string
         }
@@ -242,6 +250,14 @@ export interface Database {
           price_target?: number | null
           current_price?: number | null
           is_flagged?: boolean
+          list_id?: string | null
+          bias?: 'Bullish' | 'Bearish' | 'Neutral' | null
+          status_type?: 'Watching' | 'Ready' | 'In Trade' | 'Avoid' | null
+          entry_price?: number | null
+          target_price?: number | null
+          stop_price?: number | null
+          earnings_date?: string | null
+          thesis?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -253,7 +269,67 @@ export interface Database {
           price_target?: number | null
           current_price?: number | null
           is_flagged?: boolean
+          list_id?: string | null
+          bias?: 'Bullish' | 'Bearish' | 'Neutral' | null
+          status_type?: 'Watching' | 'Ready' | 'In Trade' | 'Avoid' | null
+          entry_price?: number | null
+          target_price?: number | null
+          stop_price?: number | null
+          earnings_date?: string | null
+          thesis?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      watchlist_lists: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      portfolio_snapshots: {
+        Row: {
+          id: string
+          user_id: string
+          snapshot_date: string
+          total_market_value: number | null
+          total_cost_basis: number | null
+          unrealized_pnl: number | null
+          position_count: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          snapshot_date: string
+          total_market_value?: number | null
+          total_cost_basis?: number | null
+          unrealized_pnl?: number | null
+          position_count?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          snapshot_date?: string
+          total_market_value?: number | null
+          total_cost_basis?: number | null
+          unrealized_pnl?: number | null
+          position_count?: number | null
         }
         Relationships: []
       }
@@ -265,6 +341,8 @@ export interface Database {
           title: string
           description: string | null
           status: 'open' | 'in_progress' | 'resolved'
+          admin_response: string | null
+          responded_at: string | null
           created_at: string
           updated_at: string
         }
@@ -275,6 +353,8 @@ export interface Database {
           title: string
           description?: string | null
           status?: 'open' | 'in_progress' | 'resolved'
+          admin_response?: string | null
+          responded_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -285,6 +365,8 @@ export interface Database {
           title?: string
           description?: string | null
           status?: 'open' | 'in_progress' | 'resolved'
+          admin_response?: string | null
+          responded_at?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -320,6 +402,13 @@ export type UpdatePortfolioPosition = Database['public']['Tables']['portfolio_po
 export type WatchlistItem = Database['public']['Tables']['watchlist']['Row']
 export type InsertWatchlistItem = Database['public']['Tables']['watchlist']['Insert']
 export type UpdateWatchlistItem = Database['public']['Tables']['watchlist']['Update']
+
+export type WatchlistList = Database['public']['Tables']['watchlist_lists']['Row']
+export type InsertWatchlistList = Database['public']['Tables']['watchlist_lists']['Insert']
+export type UpdateWatchlistList = Database['public']['Tables']['watchlist_lists']['Update']
+
+export type PortfolioSnapshot = Database['public']['Tables']['portfolio_snapshots']['Row']
+export type InsertPortfolioSnapshot = Database['public']['Tables']['portfolio_snapshots']['Insert']
 
 export type WheelCycle = Database['public']['Tables']['wheel_cycles']['Row']
 export type InsertWheelCycle = Database['public']['Tables']['wheel_cycles']['Insert']

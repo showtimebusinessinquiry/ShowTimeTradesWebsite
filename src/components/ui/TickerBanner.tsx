@@ -35,7 +35,11 @@ export function TickerBanner() {
   }
 
   if (tickers.length === 0) {
-    return <div className="h-8 bg-surface border-b border-default" />
+    return (
+      <div className="h-8 bg-surface border-b border-default flex items-center px-6">
+        <div className="text-xs text-text-muted/50 tracking-widest">Market data unavailable</div>
+      </div>
+    )
   }
 
   const items = [...tickers, ...tickers, ...tickers, ...tickers]

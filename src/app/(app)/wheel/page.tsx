@@ -46,6 +46,7 @@ interface FormValues {
   expiration: string
   contracts: string
   premium: string
+  delta: string
   btc_price: string
   shares: string
   cost_basis: string
@@ -60,6 +61,7 @@ const defaultForm = (): FormValues => ({
   expiration: '',
   contracts: '1',
   premium: '',
+  delta: '',
   btc_price: '',
   shares: '',
   cost_basis: '',
@@ -234,6 +236,7 @@ export default function WheelPage() {
       strike,
       expiration: form.expiration,
       dte,
+      delta: form.delta ? parseFloat(form.delta) : null,
       notes: form.notes.trim() || null,
       cycle_id: modal.cycleId,
     }
@@ -286,6 +289,7 @@ export default function WheelPage() {
         pnl: sharesPnl,
         pnl_pct: sharesPnlPct,
         notes: 'Called away — Wheel cycle',
+        cycle_id: cycleId,
       }
       await supabase.from('trades').insert(payload)
     }
@@ -350,6 +354,7 @@ export default function WheelPage() {
       strike,
       expiration: form.expiration,
       dte,
+      delta: form.delta ? parseFloat(form.delta) : null,
       notes: form.notes.trim() || null,
       cycle_id: (cycleData as WheelCycle).id,
     }
@@ -403,6 +408,11 @@ export default function WheelPage() {
       .filter(p => p.ticker !== 'CASH')
       .reduce((sum, p) => sum + p.entry_price * p.quantity, 0),
     [allPositions]
+  )
+
+  const calledAwayTrades = useMemo(
+    () => wheelTrades.filter(t => t.strategy === 'portfolio_close').sort((a, b) => b.date.localeCompare(a.date)),
+    [wheelTrades]
   )
 
   const ytdPremium = useMemo(() => {
@@ -855,7 +865,10 @@ export default function WheelPage() {
                       <Button
                         size="sm"
                         variant="primary"
-                        onClick={() => openModal({ type: 'new_cycle' })}
+                        onClick={() => {
+                          if (!window.confirm(`Start a brand-new Wheel cycle? This will open a separate cycle — the current ${cycle.ticker} cycle remains open.`)) return
+                          openModal({ type: 'new_cycle' })
+                        }}
                       >
                         New CSP
                       </Button>
@@ -885,6 +898,51 @@ export default function WheelPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Called Away History ── */}
+      {calledAwayTrades.length > 0 && (
+        <div className="mt-8 border border-default rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-default bg-surface2/60 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-0.5 h-3.5 rounded-full bg-gain/60 inline-block" />
+              <span className="text-xs font-semibold text-text-secondary tracking-[0.08em] uppercase">Called Away</span>
+              <span className="text-[10px] font-mono text-text-muted">{calledAwayTrades.length} cycle{calledAwayTrades.length !== 1 ? 's' : ''}</span>
+            </div>
+            {(() => {
+              const totalPnl = calledAwayTrades.reduce((s, t) => s + (t.pnl ?? 0), 0)
+              return (
+                <span className={`text-xs font-mono font-semibold ${totalPnl >= 0 ? 'text-gain' : 'text-loss'}`}>
+                  {totalPnl >= 0 ? '+' : '-'}${Math.abs(totalPnl).toFixed(2)} total
+                </span>
+              )
+            })()}
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-default bg-surface">
+                {['Date', 'Ticker', 'Qty', 'Cost Basis', 'Exit Price', 'P&L', 'Notes'].map(h => (
+                  <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-text-muted tracking-[0.12em] uppercase">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {calledAwayTrades.map((t, i) => (
+                <tr key={t.id} className={`border-b border-default/40 hover:bg-surface2/30 transition-colors ${i % 2 === 0 ? 'bg-surface' : 'bg-bg'}`}>
+                  <td className="px-4 py-3 font-mono text-text-muted">{t.date}</td>
+                  <td className="px-4 py-3 font-bold text-text-primary tracking-wider">{t.ticker}</td>
+                  <td className="px-4 py-3 font-mono text-text-secondary">{t.quantity}</td>
+                  <td className="px-4 py-3 font-mono text-text-secondary">{t.entry_price != null ? `$${t.entry_price.toFixed(2)}` : '—'}</td>
+                  <td className="px-4 py-3 font-mono text-text-secondary">{t.exit_price != null ? `$${t.exit_price.toFixed(2)}` : '—'}</td>
+                  <td className={`px-4 py-3 font-mono font-semibold ${(t.pnl ?? 0) >= 0 ? 'text-gain' : 'text-loss'}`}>
+                    {t.pnl != null ? `${t.pnl >= 0 ? '+' : '-'}$${Math.abs(t.pnl).toFixed(2)}` : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-text-muted">{t.notes ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -1001,6 +1059,19 @@ export default function WheelPage() {
               value={form.notes}
               onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
               placeholder="Optional"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Delta (optional)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="-1"
+              max="0"
+              value={form.delta}
+              onChange={e => setForm(p => ({ ...p, delta: e.target.value }))}
+              placeholder="e.g. -0.30"
               className={inputClass}
             />
           </div>
@@ -1218,6 +1289,19 @@ export default function WheelPage() {
               value={form.notes}
               onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
               placeholder="Optional"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Delta (optional)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="1"
+              value={form.delta}
+              onChange={e => setForm(p => ({ ...p, delta: e.target.value }))}
+              placeholder="e.g. 0.30"
               className={inputClass}
             />
           </div>

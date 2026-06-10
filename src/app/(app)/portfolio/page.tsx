@@ -85,26 +85,42 @@ export default function PortfolioPage() {
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [snapshots, setSnapshots] = useState<Array<{ snapshot_date: string; total_market_value: number | null; total_cost_basis: number | null; unrealized_pnl: number | null; position_count: number | null }>>([])
+  const [showHistory, setShowHistory] = useState(false)
 
   const notify = (msg: string, ok = true) => {
     setToast({ msg, ok })
     setTimeout(() => setToast(null), 3000)
   }
 
-  const fetchLivePrices = async (pos: PortfolioPosition[]) => {
+  const loadSnapshots = async () => {
+    if (!user) return
+    const { data } = await supabase
+      .from('portfolio_snapshots')
+      .select('snapshot_date, total_market_value, total_cost_basis, unrealized_pnl, position_count')
+      .eq('user_id', user.id)
+      .order('snapshot_date', { ascending: false })
+      .limit(90)
+    setSnapshots(data ?? [])
+  }
+
+  const fetchLivePrices = async (pos: PortfolioPosition[]): Promise<Record<string, number>> => {
     const symbols = Array.from(new Set(pos.map(p => p.ticker).filter(t => t !== 'CASH')))
-    if (symbols.length === 0) return
+    if (symbols.length === 0) return {}
     setPricesLoading(true)
     try {
-      const res = await fetch(`/api/price-quote?symbols=${symbols.join(',')}`)
-      const data: { quotes: { symbol: string; price: number }[] } = await res.json()
+      const res = await fetch(`/api/stock-quotes?symbols=${symbols.join(',')}`)
+      const data: { quotes: Array<{ symbol: string; price: number; change: number; changePct: number }> } = await res.json()
       const map: Record<string, number> = {}
       data.quotes.forEach(q => { map[q.symbol] = q.price })
       setLivePrices(map)
+      setPricesLoading(false)
+      return map
     } catch (err) {
       console.error('Failed to fetch live prices:', err)
     }
     setPricesLoading(false)
+    return {}
   }
 
   const fetchPositions = async () => {
@@ -122,7 +138,26 @@ export default function PortfolioPage() {
     setClosedTrades((closedRes.data ?? []) as Trade[])
     setTotalRealizedPnl((pnlRes.data ?? []).reduce((s, t) => s + (t.pnl ?? 0), 0))
     setLoading(false)
-    await fetchLivePrices(pos)
+    const priceMap = await fetchLivePrices(pos)
+
+    // Save daily snapshot
+    if (user && pos.length > 0) {
+      const equityPos = pos.filter(p => p.ticker !== 'CASH')
+      const total_cost_basis = equityPos.reduce((s, p) => s + p.entry_price * p.quantity, 0)
+      const total_market_value = equityPos.reduce((s, p) => s + (priceMap[p.ticker] ?? p.entry_price) * p.quantity, 0)
+      const unrealized_pnl = total_market_value - total_cost_basis
+      const today = new Date().toISOString().slice(0, 10)
+      supabase.from('portfolio_snapshots').upsert({
+        user_id: user.id,
+        snapshot_date: today,
+        total_market_value: parseFloat(total_market_value.toFixed(4)),
+        total_cost_basis: parseFloat(total_cost_basis.toFixed(4)),
+        unrealized_pnl: parseFloat(unrealized_pnl.toFixed(4)),
+        position_count: equityPos.length,
+      }, { onConflict: 'user_id,snapshot_date' })
+        .then(() => loadSnapshots())
+        .catch(err => console.error('[Portfolio] snapshot upsert error:', err))
+    }
   }
 
   useEffect(() => {
@@ -385,7 +420,7 @@ export default function PortfolioPage() {
         action={
           <div className="flex gap-2 items-center">
             {pricesLoading && <span className="text-xs text-text-muted animate-pulse">Fetching prices...</span>}
-            <Button onClick={() => fetchLivePrices(positions)} variant="secondary" disabled={pricesLoading}>↻ Refresh</Button>
+            <Button onClick={fetchPositions} variant="secondary" disabled={pricesLoading}>↻ Refresh</Button>
             <Button
               onClick={() => { setCashAmount(positions.find(p => p.ticker === 'CASH')?.quantity.toString() ?? ''); setFormError(null); setCashModalOpen(true) }}
               variant="secondary"
@@ -809,6 +844,54 @@ export default function PortfolioPage() {
           </div>
         </div>
       )}
+
+      {/* Portfolio History */}
+      <div className="mt-8">
+        <button
+          onClick={() => { setShowHistory(v => !v); if (!showHistory && snapshots.length === 0) loadSnapshots() }}
+          className="flex items-center gap-2 text-xs text-text-muted hover:text-text-primary transition-colors mb-3 group"
+        >
+          <span className="w-0.5 h-3.5 rounded-full bg-accent/50 inline-block" />
+          <span className="font-semibold tracking-[0.1em] uppercase">Portfolio History</span>
+          <span className="text-text-muted/50 group-hover:text-text-muted transition-colors">{showHistory ? '▲' : '▼'}</span>
+          {snapshots.length > 0 && <span className="text-text-muted/50">{snapshots.length} snapshots</span>}
+        </button>
+        {showHistory && (
+          snapshots.length === 0 ? (
+            <div className="border border-default rounded-xl bg-surface p-8 text-center text-xs text-text-muted">
+              No history yet. Snapshots are saved automatically each time you visit this page.
+            </div>
+          ) : (
+            <div className="border border-default rounded-xl overflow-hidden overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-default bg-surface2">
+                    {['Date', 'Market Value', 'Cost Basis', 'Unrealized P&L', 'Positions'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {snapshots.map((s, i) => {
+                    const pnl = s.unrealized_pnl ?? 0
+                    return (
+                      <tr key={s.snapshot_date} className={`border-b border-default last:border-0 hover:bg-surface2 transition-colors ${i % 2 === 0 ? 'bg-surface' : 'bg-bg'}`}>
+                        <td className="px-4 py-2.5 font-mono text-text-secondary">{s.snapshot_date}</td>
+                        <td className="px-4 py-2.5 font-mono text-text-primary">{s.total_market_value != null ? `$${s.total_market_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
+                        <td className="px-4 py-2.5 font-mono text-text-secondary">{s.total_cost_basis != null ? `$${s.total_cost_basis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
+                        <td className={`px-4 py-2.5 font-mono font-semibold ${pnl >= 0 ? 'text-gain' : 'text-loss'}`}>
+                          {pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-text-muted">{s.position_count ?? '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
+      </div>
     </div>
   )
 }

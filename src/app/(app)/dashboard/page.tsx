@@ -12,6 +12,7 @@ import {
   calcWinRate, calcTotalPnl, calcAvgROC, calcUnrealizedPnl,
   calcMaxDrawdown, calcProfitFactor, calcExpectancy, calcAvgGain, calcAvgLoss,
 } from '@/utils/calculations'
+import { MISTAKE_TAGS } from '@/lib/constants'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -83,6 +84,26 @@ export default function DashboardPage() {
   const [range, setRange] = useState<DateRange>('ALL')
   const [livePrices, setLivePrices] = useState<Record<string, number>>({})
   const [pricesLoading, setPricesLoading] = useState(false)
+  const [upcomingEarnings, setUpcomingEarnings] = useState<Array<{ symbol: string; earnings_date: string }>>([])
+
+  useEffect(() => {
+    if (!user) {
+      setLoading(false)
+      return
+    }
+    const today = new Date().toLocaleDateString('en-CA')
+    const in14 = new Date(Date.now() + 14 * 86_400_000).toLocaleDateString('en-CA')
+    supabase
+      .from('watchlist')
+      .select('ticker, earnings_date')
+      .eq('user_id', user.id)
+      .gte('earnings_date', today)
+      .lte('earnings_date', in14)
+      .order('earnings_date')
+      .then(({ data }) => {
+        if (data) setUpcomingEarnings(data.map(r => ({ symbol: r.ticker, earnings_date: r.earnings_date as string })))
+      })
+  }, [user])
 
   useEffect(() => {
     if (!user) {
@@ -120,9 +141,10 @@ export default function DashboardPage() {
   }, [user])
 
   useEffect(() => {
-    const tickers = [...new Set(
-      trades.filter(t => t.exit_price === null).map(t => t.ticker)
-    )]
+    const tickers = [...new Set([
+      ...trades.filter(t => t.exit_price === null).map(t => t.ticker),
+      ...positions.map(p => p.ticker),
+    ])]
     if (tickers.length === 0) return
     setPricesLoading(true)
     fetch(`/api/stock-quotes?symbols=${tickers.join(',')}`)
@@ -134,7 +156,7 @@ export default function DashboardPage() {
       })
       .catch(() => {})
       .finally(() => setPricesLoading(false))
-  }, [trades])
+  }, [trades, positions])
 
   const filtered = useMemo(() => filterByRange(trades, range), [trades, range])
   const closedTrades = useMemo(() => filtered.filter(t => t.pnl !== null), [filtered])
@@ -148,8 +170,11 @@ export default function DashboardPage() {
   const winRate = useMemo(() => calcWinRate(tradeResults), [tradeResults])
   const avgROC = useMemo(() => calcAvgROC(filtered), [filtered])
   const openPnl = useMemo(
-    () => positions.reduce((sum, p) => sum + calcUnrealizedPnl(p.entry_price, p.current_price ?? p.entry_price, p.quantity), 0),
-    [positions]
+    () => positions.reduce((sum, p) => {
+      const price = livePrices[p.ticker] ?? p.current_price ?? p.entry_price
+      return sum + calcUnrealizedPnl(p.entry_price, price, p.quantity)
+    }, 0),
+    [positions, livePrices]
   )
   const maxDrawdown = useMemo(() => calcMaxDrawdown(tradeResults), [tradeResults])
   const profitFactor = useMemo(() => calcProfitFactor(tradeResults), [tradeResults])
@@ -206,7 +231,7 @@ export default function DashboardPage() {
     const min = Math.min(...values)
     if (max <= 0) return 0
     if (min >= 0) return 100
-    return (max / (max - min)) * 100
+    return Math.min(100, Math.max(0, (max / (max - min)) * 100))
   }, [cumulativeData])
 
   const monthlyData = useMemo(() => {
@@ -300,13 +325,15 @@ export default function DashboardPage() {
 
   const mistakeData = useMemo(() => {
     const counts: Record<string, number> = {}
+    const pnlByTag: Record<string, number> = {}
     trades.forEach(t => {
       (t.mistake_tags ?? []).forEach(tag => {
         counts[tag] = (counts[tag] ?? 0) + 1
+        pnlByTag[tag] = (pnlByTag[tag] ?? 0) + (t.pnl ?? 0)
       })
     })
     return Object.entries(counts)
-      .map(([tag, count]) => ({ tag, count }))
+      .map(([tag, count]) => ({ tag, count, pnl: pnlByTag[tag] ?? 0 }))
       .sort((a, b) => b.count - a.count)
   }, [trades])
 
@@ -345,6 +372,21 @@ export default function DashboardPage() {
           </div>
         }
       />
+
+      {/* Upcoming Earnings banner */}
+      {upcomingEarnings.length > 0 && (
+        <div className="mb-4 flex items-center gap-3 bg-amber/5 border border-amber/20 rounded-xl px-4 py-3 flex-wrap">
+          <span className="text-[10px] font-semibold text-amber tracking-[0.14em] uppercase flex-shrink-0">⚡ Upcoming Earnings</span>
+          <div className="flex items-center gap-3 flex-wrap">
+            {upcomingEarnings.map(e => (
+              <span key={e.symbol} className="flex items-center gap-1.5 text-xs">
+                <span className="font-bold text-text-primary font-mono">{e.symbol}</span>
+                <span className="text-text-muted">{e.earnings_date}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Primary metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-3">
@@ -672,21 +714,26 @@ export default function DashboardPage() {
                 </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {mistakeData.map(({ tag, count }) => {
+                {mistakeData.map(({ tag, count, pnl }) => {
                   const maxCount = mistakeData[0].count
                   const pct = (count / maxCount) * 100
+                  const tagDef = MISTAKE_TAGS.find(t => t.value === tag)
+                  const label = tagDef?.label ?? tag.replace(/_/g, ' ')
+                  const cls = tagDef?.cls ?? 'text-amber bg-amber/10 border-amber/30'
                   return (
-                    <div key={tag} className="flex items-center gap-3">
-                      <div className="text-xs font-semibold text-text-secondary w-28 flex-shrink-0 capitalize">
-                        {tag.replace(/_/g, ' ')}
+                    <div key={tag} className="flex flex-col gap-1.5 p-3 bg-surface2/50 rounded-lg border border-default/40">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded border ${cls}`}>{label}</span>
+                        <span className="text-xs font-mono text-text-muted">{count}×</span>
                       </div>
-                      <div className="flex-1 h-1.5 bg-surface2 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-amber/60 rounded-full transition-all"
-                          style={{ width: `${pct}%` }}
-                        />
+                      <div className="h-1 bg-surface2 rounded-full overflow-hidden">
+                        <div className="h-full bg-amber/60 rounded-full transition-all" style={{ width: `${pct}%` }} />
                       </div>
-                      <span className="text-xs font-mono text-text-muted w-4 text-right flex-shrink-0">{count}</span>
+                      {pnl !== 0 && (
+                        <div className={`text-[11px] font-mono text-right ${pnl < 0 ? 'text-loss' : 'text-gain'}`}>
+                          {pnl < 0 ? '-' : '+'}${Math.abs(pnl).toFixed(2)}
+                        </div>
+                      )}
                     </div>
                   )
                 })}

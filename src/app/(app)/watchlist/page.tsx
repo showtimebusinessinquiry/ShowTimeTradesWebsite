@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { TickerLogo } from '@/components/ui/TickerLogo'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth-context'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Bias = 'Bullish' | 'Bearish' | 'Neutral'
@@ -40,10 +42,9 @@ const STATUS_COLOR: Record<Status, string> = {
   'In Trade': 'text-accent bg-accent/10 border-accent/20',
   Avoid: 'text-loss bg-loss/10 border-loss/20',
 }
-const STORAGE_KEY = 'shtj_watchlist_v2'
+const LEGACY_STORAGE_KEY = 'shtj_watchlist_v2'
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
-function genId() { return Math.random().toString(36).slice(2) + Date.now().toString(36) }
 function fmtVol(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
@@ -55,24 +56,28 @@ function earningsSoon(date: string | null) {
   return diff > 0 && diff <= 14 * 86_400_000
 }
 
-// ─── Sample data ─────────────────────────────────────────────────────────────
-const NOW = new Date().toISOString()
-const UNH_EARNINGS = new Date(Date.now() + 13 * 86_400_000).toISOString().slice(0, 10)
-const DEFAULT_LISTS: WList[] = [
-  { id: 'earnings-watch', name: 'Earnings Watch', createdAt: NOW },
-  { id: 'momentum', name: 'Momentum', createdAt: NOW },
-  { id: 'swing-trades', name: 'Swing Trades', createdAt: NOW },
-  { id: 'general', name: 'General', createdAt: NOW },
-]
-const DEFAULT_TICKERS: WTicker[] = [
-  { id: 't1', symbol: 'NVDA', listId: 'earnings-watch', bias: 'Bullish', status: 'Watching', entry: 950, target: 1100, stop: 890, earningsDate: null, thesis: 'Strong data center demand ahead of next earnings. AI infrastructure capex accelerating across hyperscalers.', createdAt: NOW, updatedAt: NOW },
-  { id: 't2', symbol: 'AAPL', listId: 'general', bias: 'Neutral', status: 'Watching', entry: 175, target: 200, stop: 165, earningsDate: null, thesis: 'Waiting for India manufacturing ramp data. iPhone upgrade cycle clarity needed.', createdAt: NOW, updatedAt: NOW },
-  { id: 't3', symbol: 'AMZN', listId: 'momentum', bias: 'Bullish', status: 'Ready', entry: 185, target: 220, stop: 175, earningsDate: null, thesis: 'AWS growth reaccelerating + advertising flywheel. Weekly breakout setup forming.', createdAt: NOW, updatedAt: NOW },
-  { id: 't4', symbol: 'META', listId: 'momentum', bias: 'Bullish', status: 'In Trade', entry: 490, target: 600, stop: 460, earningsDate: null, thesis: 'Ad revenue + AI integration driving multiple expansion. Reels monetization well underway.', createdAt: NOW, updatedAt: NOW },
-  { id: 't5', symbol: 'GOOGL', listId: 'swing-trades', bias: 'Neutral', status: 'Watching', entry: 170, target: 195, stop: 158, earningsDate: null, thesis: 'Search market share overhang vs strong GCP growth. Watching AI Overviews ad impact.', createdAt: NOW, updatedAt: NOW },
-  { id: 't6', symbol: 'UNH', listId: 'general', bias: 'Bearish', status: 'Avoid', entry: null, target: null, stop: null, earningsDate: UNH_EARNINGS, thesis: 'Medical loss ratio concerns + regulatory headwinds. DOJ investigation overhang unresolved.', createdAt: NOW, updatedAt: NOW },
-]
-const BUILTIN_LIST_IDS = ['earnings-watch', 'momentum', 'swing-trades', 'general']
+// ─── DB row → WTicker / WList converters ─────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function dbToWTicker(r: any): WTicker {
+  return {
+    id: r.id,
+    symbol: r.ticker,
+    listId: r.list_id ?? '',
+    bias: (r.bias as Bias) ?? 'Neutral',
+    status: (r.status_type as Status) ?? 'Watching',
+    entry: r.entry_price ?? null,
+    target: r.target_price ?? null,
+    stop: r.stop_price ?? null,
+    earningsDate: r.earnings_date ?? null,
+    thesis: r.thesis ?? r.notes ?? '',
+    createdAt: r.created_at,
+    updatedAt: r.updated_at ?? r.created_at,
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function dbToWList(l: any): WList {
+  return { id: l.id, name: l.name, createdAt: l.created_at }
+}
 
 function defaultForm(lists: WList[]): FormVals {
   return { symbol: '', listId: lists[0]?.id ?? '', bias: 'Bullish', status: 'Watching', entry: '', target: '', stop: '', earningsDate: '', thesis: '' }
@@ -80,6 +85,7 @@ function defaultForm(lists: WList[]): FormVals {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function WatchlistPage() {
+  const { user } = useAuth()
   const [lists, setLists] = useState<WList[]>([])
   const [tickers, setTickers] = useState<WTicker[]>([])
   const [hydrated, setHydrated] = useState(false)
@@ -105,30 +111,79 @@ export default function WatchlistPage() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const quickRef = useRef<HTMLInputElement>(null)
 
-  // Init from localStorage
+  // ── Load from Supabase (with one-time localStorage migration) ─────────────
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const { lists: l, tickers: t } = JSON.parse(raw)
-        setLists(l ?? DEFAULT_LISTS)
-        setTickers(t ?? DEFAULT_TICKERS)
-      } else {
-        setLists(DEFAULT_LISTS)
-        setTickers(DEFAULT_TICKERS)
-      }
-    } catch {
-      setLists(DEFAULT_LISTS)
-      setTickers(DEFAULT_TICKERS)
-    }
-    setHydrated(true)
-  }, [])
+    if (!user) { setHydrated(true); return }
+    const load = async () => {
+      const [listsRes, tickersRes] = await Promise.all([
+        supabase.from('watchlist_lists').select('*').eq('user_id', user.id).order('created_at'),
+        supabase.from('watchlist').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+      ])
 
-  // Persist to localStorage
-  useEffect(() => {
-    if (!hydrated) return
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ lists, tickers }))
-  }, [lists, tickers, hydrated])
+      if (listsRes.error || tickersRes.error) {
+        console.error('[Watchlist] load error:', listsRes.error ?? tickersRes.error)
+        setHydrated(true)
+        return
+      }
+
+      if (listsRes.data && listsRes.data.length > 0) {
+        setLists(listsRes.data.map(dbToWList))
+        setTickers((tickersRes.data ?? []).map(dbToWTicker))
+        setHydrated(true)
+        return
+      }
+
+      // No Supabase data — attempt one-time migration from localStorage
+      try {
+        const raw = localStorage.getItem(LEGACY_STORAGE_KEY)
+        if (raw) {
+          const { lists: localLists, tickers: localTickers } = JSON.parse(raw) as { lists: WList[]; tickers: WTicker[] }
+          const listIdMap: Record<string, string> = {}
+
+          for (const list of (localLists ?? [])) {
+            const { data } = await supabase
+              .from('watchlist_lists')
+              .insert({ user_id: user.id, name: list.name })
+              .select()
+              .single()
+            if (data) listIdMap[list.id] = data.id
+          }
+
+          for (const t of (localTickers ?? [])) {
+            const newListId = listIdMap[t.listId] ?? null
+            await supabase.from('watchlist').insert({
+              user_id: user.id,
+              ticker: t.symbol,
+              list_id: newListId,
+              bias: t.bias,
+              status_type: t.status,
+              entry_price: t.entry,
+              target_price: t.target,
+              stop_price: t.stop,
+              earnings_date: t.earningsDate,
+              thesis: t.thesis,
+              notes: t.thesis,
+            })
+          }
+
+          localStorage.removeItem(LEGACY_STORAGE_KEY)
+
+          // Re-fetch after migration
+          const [lr2, tr2] = await Promise.all([
+            supabase.from('watchlist_lists').select('*').eq('user_id', user.id).order('created_at'),
+            supabase.from('watchlist').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+          ])
+          setLists((lr2.data ?? []).map(dbToWList))
+          setTickers((tr2.data ?? []).map(dbToWTicker))
+        }
+      } catch {
+        // migration failed or no legacy data — start fresh
+      }
+
+      setHydrated(true)
+    }
+    load()
+  }, [user])
 
   // "/" global shortcut
   useEffect(() => {
@@ -200,7 +255,7 @@ export default function WatchlistPage() {
 
   const listCount = (id: string) => tickers.filter(t => t.listId === id).length
 
-  // Handlers
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const openAdd = (prefill = '') => {
     setEditingId(null)
     setForm({ ...defaultForm(lists), symbol: prefill })
@@ -228,43 +283,81 @@ export default function WatchlistPage() {
     } catch { setSymPreview('invalid') }
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const sym = form.symbol.trim().toUpperCase()
-    if (!sym) return
-    if (!form.listId) return
+    if (!sym || !form.listId || !user) return
     const now = new Date().toISOString()
-    const fields = { symbol: sym, listId: form.listId, bias: form.bias, status: form.status, entry: form.entry ? parseFloat(form.entry) : null, target: form.target ? parseFloat(form.target) : null, stop: form.stop ? parseFloat(form.stop) : null, earningsDate: form.earningsDate || null, thesis: form.thesis }
+    const payload = {
+      ticker: sym,
+      list_id: form.listId || null,
+      bias: form.bias,
+      status_type: form.status,
+      entry_price: form.entry ? parseFloat(form.entry) : null,
+      target_price: form.target ? parseFloat(form.target) : null,
+      stop_price: form.stop ? parseFloat(form.stop) : null,
+      earnings_date: form.earningsDate || null,
+      thesis: form.thesis,
+      notes: form.thesis,
+      updated_at: now,
+    }
     if (editingId) {
-      setTickers(prev => prev.map(t => t.id === editingId ? { ...t, ...fields, updatedAt: now } : t))
+      const { error } = await supabase.from('watchlist').update(payload).eq('id', editingId)
+      if (!error) {
+        setTickers(prev => prev.map(t => t.id === editingId
+          ? { ...t, symbol: sym, listId: form.listId, bias: form.bias, status: form.status, entry: payload.entry_price, target: payload.target_price, stop: payload.stop_price, earningsDate: payload.earnings_date, thesis: form.thesis, updatedAt: now }
+          : t))
+      }
     } else {
-      setTickers(prev => [{ id: genId(), ...fields, createdAt: now, updatedAt: now }, ...prev])
-      fetchPrices([sym])
+      const { data, error } = await supabase
+        .from('watchlist')
+        .insert({ user_id: user.id, ...payload })
+        .select()
+        .single()
+      if (!error && data) {
+        setTickers(prev => [dbToWTicker(data), ...prev])
+        fetchPrices([sym])
+      }
     }
     closePanel()
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Remove from watchlist?')) return
+    await supabase.from('watchlist').delete().eq('id', id)
     setTickers(prev => prev.filter(t => t.id !== id))
   }
 
-  const handleDrop = (newStatus: Status) => {
+  const handleDrop = async (newStatus: Status) => {
     if (!dragId) return
-    setTickers(prev => prev.map(t => t.id === dragId ? { ...t, status: newStatus, updatedAt: new Date().toISOString() } : t))
+    const now = new Date().toISOString()
+    await supabase.from('watchlist').update({ status_type: newStatus, updated_at: now }).eq('id', dragId)
+    setTickers(prev => prev.map(t => t.id === dragId ? { ...t, status: newStatus, updatedAt: now } : t))
     setDragId(null); setDragOverCol(null)
   }
 
-  const handleAddList = () => {
+  const handleAddList = async () => {
     const name = newListName.trim()
-    if (!name) return
-    setLists(prev => [...prev, { id: genId(), name, createdAt: new Date().toISOString() }])
+    if (!name || !user) return
+    const { data, error } = await supabase
+      .from('watchlist_lists')
+      .insert({ user_id: user.id, name })
+      .select()
+      .single()
+    if (!error && data) setLists(prev => [...prev, dbToWList(data)])
     setNewListName(''); setShowNewList(false)
   }
 
-  const handleDeleteList = (id: string) => {
-    if (!confirm('Delete list? Tickers will move to General.')) return
-    const general = lists.find(l => l.id === 'general')
-    if (general) setTickers(prev => prev.map(t => t.listId === id ? { ...t, listId: general.id } : t))
+  const handleDeleteList = async (id: string) => {
+    if (!confirm('Delete list? Tickers in this list will be unassigned.')) return
+    const generalId = lists.find(l => l.name.toLowerCase() === 'general')?.id
+    if (generalId) {
+      await supabase.from('watchlist').update({ list_id: generalId }).eq('list_id', id)
+      setTickers(prev => prev.map(t => t.listId === id ? { ...t, listId: generalId } : t))
+    } else {
+      await supabase.from('watchlist').update({ list_id: null }).eq('list_id', id)
+      setTickers(prev => prev.map(t => t.listId === id ? { ...t, listId: '' } : t))
+    }
+    await supabase.from('watchlist_lists').delete().eq('id', id)
     setLists(prev => prev.filter(l => l.id !== id))
     if (activeListId === id) setActiveListId(null)
   }
@@ -401,9 +494,7 @@ export default function WatchlistPage() {
                 <span className="truncate">{list.name}</span>
                 <span className="text-[11px] font-mono text-text-muted flex-shrink-0 ml-1">{listCount(list.id)}</span>
               </button>
-              {!BUILTIN_LIST_IDS.includes(list.id) && (
-                <button onClick={() => handleDeleteList(list.id)} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-loss opacity-0 group-hover:opacity-100 transition-all text-sm leading-none">×</button>
-              )}
+              <button onClick={() => handleDeleteList(list.id)} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-loss opacity-0 group-hover:opacity-100 transition-all text-sm leading-none">×</button>
             </div>
           ))}
         </div>

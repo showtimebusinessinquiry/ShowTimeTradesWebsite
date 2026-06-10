@@ -9,7 +9,7 @@ async function fetchPrice(symbol: string): Promise<{ symbol: string; price: numb
   try {
     const res = await fetch(
       `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`,
-      { headers: HEADERS, next: { revalidate: 300 } }
+      { headers: HEADERS, next: { revalidate: 60 } }
     )
     if (!res.ok) return null
     const json = await res.json()
@@ -30,8 +30,7 @@ export async function GET(req: NextRequest) {
   const symbols = symbolsParam
     .split(',')
     .map(s => s.trim().toUpperCase())
-    .filter(s => s.length > 0 && s !== 'CASH')
-    .slice(0, 30)
+    .filter(s => /^[A-Z0-9.^=\-]{1,10}$/.test(s))
 
   if (symbols.length === 0) return Response.json({ quotes: [] })
 

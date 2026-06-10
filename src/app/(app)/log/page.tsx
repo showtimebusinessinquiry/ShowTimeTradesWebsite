@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { TickerLogo } from '@/components/ui/TickerLogo'
+import { MISTAKE_TAGS } from '@/lib/constants'
 
 const STRATEGY_SHORT: Record<string, string> = {
   csp: 'CSP',
@@ -31,19 +32,6 @@ const STRATEGY_SHORT: Record<string, string> = {
   strangle: 'Strangle',
   portfolio_close: 'Close',
 }
-
-const MISTAKE_TAGS = [
-  { value: 'fomo',          label: 'FOMO',             cls: 'text-amber bg-amber/10 border-amber/30' },
-  { value: 'revenge',       label: 'Revenge Trade',    cls: 'text-loss bg-loss/10 border-loss/30' },
-  { value: 'oversize',      label: 'Oversize Position',cls: 'text-loss bg-loss/10 border-loss/30' },
-  { value: 'early_exit',    label: 'Too Early',        cls: 'text-amber bg-amber/10 border-amber/30' },
-  { value: 'late_exit',     label: 'Held Too Long',    cls: 'text-amber bg-amber/10 border-amber/30' },
-  { value: 'no_plan',       label: 'No Plan',          cls: 'text-accent bg-accent/10 border-accent/30' },
-  { value: 'chased',        label: 'Chased Entry',     cls: 'text-amber bg-amber/10 border-amber/30' },
-  { value: 'broke_rules',   label: 'Broke Rules',      cls: 'text-loss bg-loss/10 border-loss/30' },
-  { value: 'emotional',     label: 'Emotional',        cls: 'text-accent bg-accent/10 border-accent/30' },
-  { value: 'over_leveraged',label: 'Over-leveraged',   cls: 'text-loss bg-loss/10 border-loss/30' },
-] as const
 
 const MISTAKE_LABEL: Record<string, string> = Object.fromEntries(MISTAKE_TAGS.map(t => [t.value, t.label]))
 
@@ -193,8 +181,13 @@ export default function TradeLogPage() {
     if (!isNaN(entry) && entry > 0 && !isNaN(exit)) {
       const multiplier = form.asset_type === 'option' ? 100 : 1
       const qty = parseFloat(form.quantity) || 1
-      // CSPs are credit strategies: profit = premium received minus cost to close
-      const diff = form.strategy === 'csp' ? entry - exit : exit - entry
+      // Credit strategies collect premium at open; profit = entry - exit
+      const creditStrategies = new Set([
+        'csp', 'csp_roll', 'covered_call', 'covered_call_roll',
+        'credit_spread', 'call_credit_spread', 'put_credit_spread',
+        'iron_condor', 'iron_butterfly', 'strangle', 'straddle',
+      ])
+      const diff = creditStrategies.has(form.strategy) ? entry - exit : exit - entry
       const pnl = diff * qty * multiplier
       const pnl_pct = (diff / entry) * 100
       setForm(f => ({ ...f, pnl: pnl.toFixed(2), pnl_pct: pnl_pct.toFixed(2) }))

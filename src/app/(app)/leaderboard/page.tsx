@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { Trade, Profile } from '@/types/database'
+import type { Profile } from '@/types/database'
 import { STRATEGY_LABELS } from '@/types/database'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { calcMaxDrawdown, calcProfitFactor, calcAvgGain, calcAvgLoss } from '@/utils/calculations'
@@ -10,7 +10,16 @@ import { calcMaxDrawdown, calcProfitFactor, calcAvgGain, calcAvgLoss } from '@/u
 type SortKey = 'username' | 'ticker' | 'strategy' | 'date' | 'pnl'
 type SortDir = 'asc' | 'desc'
 
-interface TradeWithUser extends Trade {
+interface PublicTrade {
+  id: string
+  user_id: string
+  date: string
+  ticker: string
+  strategy: string
+  pnl: number | null
+}
+
+interface TradeWithUser extends PublicTrade {
   username: string
 }
 
@@ -23,7 +32,7 @@ interface UserStat {
   edgeScore: number | null
 }
 
-function computeEdgeScore(closedTrades: Trade[]): number | null {
+function computeEdgeScore(closedTrades: PublicTrade[]): number | null {
   if (closedTrades.length < 3) return null
   const results = closedTrades.map(t => ({ pnl: t.pnl ?? 0 }))
   const wins = results.filter(r => r.pnl > 0).length
@@ -74,8 +83,8 @@ export default function LeaderboardPage() {
   useEffect(() => {
     async function load() {
       const [{ data: profiles, error: pErr }, { data: tradesData, error: tErr }] = await Promise.all([
-        supabase.from('profiles').select('*'),
-        supabase.from('trades').select('*').order('date', { ascending: false }),
+        supabase.from('profiles').select('user_id, username'),
+        supabase.from('trades').select('id, user_id, date, ticker, strategy, pnl').order('date', { ascending: false }),
       ])
 
       if (pErr || tErr) {

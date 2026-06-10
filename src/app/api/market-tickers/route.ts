@@ -20,7 +20,7 @@ async function fetchSymbol(symbol: string): Promise<{ symbol: string; price: str
   try {
     const res = await fetch(
       `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=2d`,
-      { headers: HEADERS, next: { revalidate: 300 } }
+      { headers: HEADERS, next: { revalidate: 60 } }
     )
     if (!res.ok) return null
     const json = await res.json()

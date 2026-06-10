@@ -13,10 +13,18 @@ export async function GET(req: NextRequest) {
   const type = searchParams.get('type') // 'put' for CSP, 'call' for CC
 
   if (!ticker) return Response.json({ error: 'ticker required' }, { status: 400 })
+  if (type !== null && type !== 'call' && type !== 'put') {
+    return Response.json({ error: "type must be 'call' or 'put'" }, { status: 400 })
+  }
 
-  // Convert YYYY-MM-DD to epoch seconds for Yahoo Finance options endpoint
+  // Convert YYYY-MM-DD to epoch seconds for Yahoo Finance options endpoint.
+  // Use local noon to avoid UTC midnight crossing a day boundary in non-UTC timezones.
   const epochParam = expiration
-    ? `?date=${Math.floor(new Date(expiration + 'T12:00:00Z').getTime() / 1000)}`
+    ? (() => {
+        const [y, m, d] = expiration.split('-').map(Number)
+        const local = new Date(y, m - 1, d, 12, 0, 0)
+        return `?date=${Math.floor(local.getTime() / 1000)}`
+      })()
     : ''
 
   const urls = [
