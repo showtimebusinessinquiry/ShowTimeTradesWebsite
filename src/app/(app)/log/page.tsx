@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
-import type { Trade, InsertTrade, UpdateTrade, AssetType, TradeStrategy, TradeGroup, InsertTradeGroup } from '@/types/database'
+import type { Trade, InsertTrade, UpdateTrade, AssetType, TradeStrategy, TradeGroup, InsertTradeGroup, TradeExit, InsertTradeExit } from '@/types/database'
 import { STRATEGY_LABELS, OPTION_STRATEGIES, EQUITY_STRATEGIES } from '@/types/database'
+import { calcExitPnl, calcRemainingQty } from '@/utils/calculations'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -119,6 +120,7 @@ type SortDir = 'asc' | 'desc'
 export default function TradeLogPage() {
   const { user } = useAuth()
   const [trades, setTrades] = useState<Trade[]>([])
+  const [tradeExits, setTradeExits] = useState<TradeExit[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null)
@@ -131,7 +133,12 @@ export default function TradeLogPage() {
   const [livePrices, setLivePrices] = useState<Record<string, number>>({})
   const [tradeGroups, setTradeGroups] = useState<TradeGroup[]>([])
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [expandedExits, setExpandedExits] = useState<Set<string>>(new Set())
   const [deletingGroupId, setDeletingGroupId] = useState<string | null>(null)
+  const [trimTrade, setTrimTrade] = useState<Trade | null>(null)
+  const [trimForm, setTrimForm] = useState({ exit_date: '', exit_price: '', quantity: '', notes: '' })
+  const [trimSaving, setTrimSaving] = useState(false)
+  const [trimError, setTrimError] = useState<string | null>(null)
 
   const notify = (msg: string, ok = true) => {
     setToast({ msg, ok })
@@ -143,14 +150,17 @@ export default function TradeLogPage() {
       setLoading(false)
       return
     }
-    const [tradesRes, groupsRes] = await Promise.all([
+    const [tradesRes, groupsRes, exitsRes] = await Promise.all([
       supabase.from('trades').select('*').eq('user_id', user.id).order('date', { ascending: false }),
       supabase.from('trade_groups').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('trade_exits').select('*').eq('user_id', user.id).order('exit_date', { ascending: true }),
     ])
     if (tradesRes.error) notify(`Failed to load trades: ${tradesRes.error.message}`, false)
     if (groupsRes.error) notify(`Failed to load groups: ${groupsRes.error.message}`, false)
+    if (exitsRes.error) notify(`Failed to load exits: ${exitsRes.error.message}`, false)
     setTrades(tradesRes.data ?? [])
     setTradeGroups(groupsRes.data ?? [])
+    setTradeExits(exitsRes.data ?? [])
     setLoading(false)
   }
 
@@ -427,6 +437,68 @@ export default function TradeLogPage() {
     await fetchAll()
   }
 
+  const openTrim = (trade: Trade) => {
+    const exits = exitsMap[trade.id] ?? []
+    const remaining = calcRemainingQty(trade.quantity, exits)
+    setTrimTrade(trade)
+    setTrimForm({
+      exit_date: new Date().toISOString().slice(0, 10),
+      exit_price: '',
+      quantity: String(remaining),
+      notes: '',
+    })
+    setTrimError(null)
+  }
+
+  const closeTrim = () => {
+    setTrimTrade(null)
+    setTrimError(null)
+  }
+
+  const handleTrimSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!trimTrade || !user) return
+    setTrimError(null)
+
+    const exitPrice = parseFloat(trimForm.exit_price)
+    const qty = parseInt(trimForm.quantity, 10)
+    if (isNaN(exitPrice) || exitPrice <= 0) { setTrimError('Exit price is required.'); return }
+    if (isNaN(qty) || qty <= 0) { setTrimError('Quantity must be at least 1.'); return }
+
+    const exits = exitsMap[trimTrade.id] ?? []
+    const remaining = calcRemainingQty(trimTrade.quantity, exits)
+    if (qty > remaining) { setTrimError(`Max quantity is ${remaining}.`); return }
+
+    const pnl = calcExitPnl(trimTrade.strategy, trimTrade.entry_price, exitPrice, qty, trimTrade.asset_type)
+
+    setTrimSaving(true)
+    const { error: insertError } = await supabase.from('trade_exits').insert({
+      trade_id: trimTrade.id,
+      user_id: user.id,
+      exit_date: trimForm.exit_date,
+      exit_price: exitPrice,
+      quantity: qty,
+      pnl,
+      notes: trimForm.notes.trim() || null,
+    } satisfies InsertTradeExit)
+
+    if (insertError) {
+      setTrimError(insertError.message)
+      setTrimSaving(false)
+      return
+    }
+
+    const newRemaining = remaining - qty
+    if (newRemaining <= 0) {
+      await supabase.from('trades').update({ close_date: trimForm.exit_date }).eq('id', trimTrade.id)
+    }
+
+    setTrimSaving(false)
+    closeTrim()
+    notify('Position trimmed.')
+    await fetchAll()
+  }
+
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -470,6 +542,24 @@ export default function TradeLogPage() {
     if (t.group_id) { (acc[t.group_id] ??= []).push(t) }
     return acc
   }, {})
+
+  const exitsMap = useMemo<Record<string, TradeExit[]>>(
+    () => tradeExits.reduce((acc, e) => {
+      ;(acc[e.trade_id] ??= []).push(e)
+      return acc
+    }, {} as Record<string, TradeExit[]>),
+    [tradeExits],
+  )
+
+  function getTradeStatus(trade: Trade, exits: TradeExit[]): 'Open' | 'Partial' | 'Closed' {
+    if (exits.length === 0) return trade.exit_price != null ? 'Closed' : 'Open'
+    return calcRemainingQty(trade.quantity, exits) <= 0 ? 'Closed' : 'Partial'
+  }
+
+  function getEffectivePnl(trade: Trade, exits: TradeExit[]): number | null {
+    if (exits.length > 0) return exits.reduce((s, e) => s + e.pnl, 0)
+    return trade.pnl
+  }
 
   const inputClass = "w-full bg-bg border border-default rounded-lg px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
   const readonlyInputClass = "w-full bg-surface2 border border-default/50 rounded-lg px-3 py-2 text-sm text-text-secondary cursor-not-allowed"
@@ -693,16 +783,20 @@ export default function TradeLogPage() {
             </thead>
             <tbody>
               {sorted.map((trade, i) => {
-                const pnl = trade.pnl ?? 0
-                const pnlColor = pnl > 0 ? 'text-gain' : pnl < 0 ? 'text-loss' : 'text-text-muted'
-                const isOpen = trade.exit_price == null
+                const exits = exitsMap[trade.id] ?? []
+                const status = getTradeStatus(trade, exits)
+                const effectivePnl = getEffectivePnl(trade, exits) ?? 0
+                const pnlColor = effectivePnl > 0 ? 'text-gain' : effectivePnl < 0 ? 'text-loss' : 'text-text-muted'
+                const isOpen = status !== 'Closed'
+                const isExitsExpanded = expandedExits.has(trade.id)
                 const roc = trade.strategy === 'csp' && trade.strike != null
                   ? ((trade.entry_price / trade.strike) * 100).toFixed(2)
                   : null
                 return (
+                  <>
                   <tr
                     key={trade.id}
-                    className={`border-b border-default hover:bg-surface2 transition-colors ${i % 2 === 0 ? 'bg-surface' : 'bg-bg'}`}
+                    className={`border-b border-default hover:bg-surface2 transition-colors ${exits.length > 0 ? '' : 'last:border-0'} ${i % 2 === 0 ? 'bg-surface' : 'bg-bg'}`}
                   >
                     <td className="px-4 py-3 text-text-secondary font-mono text-xs">{trade.date}</td>
                     <td className="px-4 py-3">
@@ -710,8 +804,10 @@ export default function TradeLogPage() {
                         <TickerLogo ticker={trade.ticker} size={18} />
                         <div>
                           <div className="text-text-primary font-bold tracking-wider text-xs">{trade.ticker}</div>
-                          <div className={`text-[10px] font-semibold tracking-[0.1em] uppercase ${isOpen ? 'text-amber' : 'text-text-muted'}`}>
-                            {isOpen ? 'Open' : 'Closed'}
+                          <div className={`text-[10px] font-semibold tracking-[0.1em] uppercase ${
+                            status === 'Open' ? 'text-amber' : status === 'Partial' ? 'text-amber-300' : 'text-text-muted'
+                          }`}>
+                            {status}
                           </div>
                           {trade.group_id && (() => {
                             const g = tradeGroups.find(g => g.id === trade.group_id)
@@ -747,7 +843,11 @@ export default function TradeLogPage() {
                     </td>
                     <td className="px-4 py-3 text-right text-text-primary font-mono text-xs">${trade.entry_price?.toFixed(2)}</td>
                     <td className="px-4 py-3 text-right font-mono text-xs">
-                      {trade.exit_price != null ? (
+                      {exits.length > 0 ? (
+                        <span className="text-text-muted text-[10px]">
+                          {exits.length} exit{exits.length !== 1 ? 's' : ''}
+                        </span>
+                      ) : trade.exit_price != null ? (
                         <span className="text-text-secondary">${trade.exit_price.toFixed(2)}</span>
                       ) : livePrices[trade.ticker] != null ? (
                         <span className="text-text-muted/70 flex items-center justify-end gap-1">
@@ -758,16 +858,23 @@ export default function TradeLogPage() {
                         <span className="text-text-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right text-text-secondary font-mono text-xs">{trade.quantity}</td>
+                    <td className="px-4 py-3 text-right text-text-secondary font-mono text-xs">
+                      {exits.length > 0 ? (
+                        <span>
+                          <span className={status !== 'Closed' ? 'text-amber-300' : ''}>{calcRemainingQty(trade.quantity, exits)}</span>
+                          <span className="text-text-muted">/{trade.quantity}</span>
+                        </span>
+                      ) : trade.quantity}
+                    </td>
                     <td className={`px-4 py-3 text-right font-mono font-bold text-sm ${pnlColor}`}>
-                      {pnl !== 0 ? `${pnl > 0 ? '+' : ''}$${pnl.toFixed(2)}` :
-                        (isOpen && trade.asset_type !== 'option' && livePrices[trade.ticker] != null) ? (() => {
+                      {effectivePnl !== 0 ? `${effectivePnl > 0 ? '+' : ''}$${Math.abs(effectivePnl).toFixed(2)}` :
+                        (isOpen && trade.asset_type !== 'option' && livePrices[trade.ticker] != null && exits.length === 0) ? (() => {
                           const unrealized = (livePrices[trade.ticker] - trade.entry_price) * (trade.quantity ?? 1)
                           return <span className={unrealized >= 0 ? 'text-gain' : 'text-loss'}>~{unrealized >= 0 ? '+$' : '-$'}{Math.abs(unrealized).toFixed(2)}</span>
                         })() : '—'}
                     </td>
                     <td className={`px-4 py-3 text-right font-mono text-xs ${pnlColor}`}>
-                      <div>{trade.pnl_pct != null ? `${trade.pnl_pct > 0 ? '+' : ''}${trade.pnl_pct.toFixed(2)}%` : '—'}</div>
+                      <div>{trade.pnl_pct != null && exits.length === 0 ? `${trade.pnl_pct > 0 ? '+' : ''}${trade.pnl_pct.toFixed(2)}%` : '—'}</div>
                       {roc && <div className="text-text-muted text-[10px] mt-0.5">ROC {roc}%</div>}
                     </td>
                     <td className="px-4 py-3 text-right text-text-muted font-mono text-xs">
@@ -787,6 +894,26 @@ export default function TradeLogPage() {
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-3">
+                        {exits.length > 0 && (
+                          <button
+                            onClick={() => setExpandedExits(prev => {
+                              const next = new Set(prev)
+                              next.has(trade.id) ? next.delete(trade.id) : next.add(trade.id)
+                              return next
+                            })}
+                            className="text-[10px] font-semibold tracking-[0.1em] uppercase text-text-muted hover:text-text-primary transition-colors"
+                          >
+                            {isExitsExpanded ? '▲' : '▼'}
+                          </button>
+                        )}
+                        {status !== 'Closed' && trade.exit_price === null && (
+                          <button
+                            onClick={() => openTrim(trade)}
+                            className="text-[10px] font-semibold tracking-[0.1em] uppercase text-text-muted hover:text-accent transition-colors"
+                          >
+                            Trim
+                          </button>
+                        )}
                         <button
                           onClick={() => openEdit(trade)}
                           className="text-[10px] font-semibold tracking-[0.1em] uppercase text-text-muted hover:text-accent transition-colors"
@@ -802,12 +929,148 @@ export default function TradeLogPage() {
                       </div>
                     </td>
                   </tr>
+                  {exits.length > 0 && isExitsExpanded && (
+                    <tr key={`${trade.id}-exits`} className={`border-b border-default ${i % 2 === 0 ? 'bg-surface' : 'bg-bg'}`}>
+                      <td colSpan={11} className="px-6 pb-3 pt-0">
+                        <div className="border border-default/50 rounded-lg overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-surface2 border-b border-default/50">
+                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-text-muted tracking-[0.12em] uppercase">Exit Date</th>
+                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-text-muted tracking-[0.12em] uppercase">Exit Price</th>
+                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-text-muted tracking-[0.12em] uppercase">Qty</th>
+                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-text-muted tracking-[0.12em] uppercase">P&L</th>
+                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-text-muted tracking-[0.12em] uppercase">Notes</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {exits.map(ex => (
+                                <tr key={ex.id} className="border-b border-default/30 last:border-0 bg-bg">
+                                  <td className="px-3 py-2 font-mono text-text-secondary">{ex.exit_date}</td>
+                                  <td className="px-3 py-2 font-mono text-right text-text-primary">${ex.exit_price.toFixed(2)}</td>
+                                  <td className="px-3 py-2 font-mono text-right text-text-secondary">{ex.quantity}</td>
+                                  <td className={`px-3 py-2 font-mono font-bold text-right ${ex.pnl > 0 ? 'text-gain' : ex.pnl < 0 ? 'text-loss' : 'text-text-muted'}`}>
+                                    {ex.pnl > 0 ? '+' : ''}${ex.pnl.toFixed(2)}
+                                  </td>
+                                  <td className="px-3 py-2 text-text-muted text-[10px]">{ex.notes ?? '—'}</td>
+                                </tr>
+                              ))}
+                              <tr className="bg-surface2 border-t border-default/50">
+                                <td className="px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Total</td>
+                                <td className="px-3 py-2" />
+                                <td className="px-3 py-2 font-mono font-bold text-right text-text-secondary">
+                                  {exits.reduce((s, e) => s + e.quantity, 0)}/{trade.quantity}
+                                </td>
+                                <td className={`px-3 py-2 font-mono font-bold text-right ${effectivePnl > 0 ? 'text-gain' : effectivePnl < 0 ? 'text-loss' : 'text-text-muted'}`}>
+                                  {effectivePnl > 0 ? '+' : ''}${effectivePnl.toFixed(2)}
+                                </td>
+                                <td className="px-3 py-2" />
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </>
                 )
               })}
             </tbody>
           </table>
         </div>
       )}
+
+      {/* Trim Modal */}
+      <Modal
+        open={trimTrade !== null}
+        onClose={closeTrim}
+        title={trimTrade ? `Trim Position — ${trimTrade.ticker}` : 'Trim Position'}
+        width="max-w-md"
+      >
+        {trimTrade && (
+          <form onSubmit={handleTrimSave} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Exit Date</label>
+                <input
+                  type="date"
+                  value={trimForm.exit_date}
+                  onChange={e => setTrimForm(p => ({ ...p, exit_date: e.target.value }))}
+                  required
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Exit Price</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={trimForm.exit_price}
+                  onChange={e => setTrimForm(p => ({ ...p, exit_price: e.target.value }))}
+                  required
+                  placeholder="0.00"
+                  className={inputClass}
+                />
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>
+                Quantity
+                <span className="ml-2 normal-case tracking-normal text-text-muted font-normal">
+                  ({calcRemainingQty(trimTrade.quantity, exitsMap[trimTrade.id] ?? [])} remaining of {trimTrade.quantity})
+                </span>
+              </label>
+              <input
+                type="number"
+                step="1"
+                min="1"
+                max={calcRemainingQty(trimTrade.quantity, exitsMap[trimTrade.id] ?? [])}
+                value={trimForm.quantity}
+                onChange={e => setTrimForm(p => ({ ...p, quantity: e.target.value }))}
+                required
+                className={inputClass}
+              />
+            </div>
+            {trimForm.exit_price && trimForm.quantity && (
+              <div>
+                <label className={labelClass}>Est. P&L <span className="ml-2 normal-case tracking-normal text-text-muted font-normal">auto</span></label>
+                <div className={`${readonlyInputClass} font-mono font-bold ${(() => {
+                  const p = calcExitPnl(trimTrade.strategy, trimTrade.entry_price, parseFloat(trimForm.exit_price), parseInt(trimForm.quantity, 10), trimTrade.asset_type)
+                  return p > 0 ? 'text-gain' : p < 0 ? 'text-loss' : 'text-text-muted'
+                })()}`}>
+                  {(() => {
+                    const p = calcExitPnl(trimTrade.strategy, trimTrade.entry_price, parseFloat(trimForm.exit_price), parseInt(trimForm.quantity, 10), trimTrade.asset_type)
+                    return `${p > 0 ? '+' : ''}$${p.toFixed(2)}`
+                  })()}
+                </div>
+              </div>
+            )}
+            <div>
+              <label className={labelClass}>Notes <span className="ml-2 normal-case tracking-normal text-text-muted font-normal">optional</span></label>
+              <textarea
+                value={trimForm.notes}
+                onChange={e => setTrimForm(p => ({ ...p, notes: e.target.value }))}
+                rows={2}
+                placeholder="Reason for partial close..."
+                className={`${inputClass} resize-none`}
+              />
+            </div>
+            {trimError && (
+              <div className="text-loss text-sm bg-loss/10 border border-loss/20 px-3 py-2 rounded-lg">
+                {trimError}
+              </div>
+            )}
+            <div className="flex gap-3 pt-2">
+              <Button type="submit" variant="primary" disabled={trimSaving}>
+                {trimSaving ? 'Saving...' : 'Record Exit'}
+              </Button>
+              <Button type="button" variant="secondary" onClick={closeTrim}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {/* Add / Edit Modal */}
       <Modal

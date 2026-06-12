@@ -127,6 +127,30 @@ export function calcAvgHoldingPeriod(
   return total / withClose.length
 }
 
+const CREDIT_STRATEGIES = new Set([
+  'csp', 'csp_roll', 'covered_call', 'covered_call_roll',
+  'credit_spread', 'call_credit_spread', 'put_credit_spread',
+  'iron_condor', 'iron_butterfly', 'strangle', 'straddle',
+])
+
+/** P&L for one partial exit, respecting credit vs debit strategy direction. */
+export function calcExitPnl(
+  strategy: string,
+  entryPrice: number,
+  exitPrice: number,
+  quantity: number,
+  assetType: 'option' | 'equity',
+): number {
+  const multiplier = assetType === 'option' ? 100 : 1
+  const diff = CREDIT_STRATEGIES.has(strategy) ? entryPrice - exitPrice : exitPrice - entryPrice
+  return diff * quantity * multiplier
+}
+
+/** Remaining open quantity after a set of partial exits. */
+export function calcRemainingQty(totalQty: number, exits: { quantity: number }[]): number {
+  return totalQty - exits.reduce((s, e) => s + e.quantity, 0)
+}
+
 /** Average ROC across options trades: entry_price / strike * 100 (%) */
 export function calcAvgROC(trades: TradeForROC[]): number {
   const opts = trades.filter(t => t.asset_type === 'option' && t.strike !== null && t.strike > 0)

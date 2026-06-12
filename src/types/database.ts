@@ -184,6 +184,41 @@ export interface Database {
         }
         Relationships: []
       }
+      trade_exits: {
+        Row: {
+          id: string
+          trade_id: string
+          user_id: string
+          exit_date: string
+          exit_price: number
+          quantity: number
+          pnl: number
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          trade_id: string
+          user_id: string
+          exit_date: string
+          exit_price: number
+          quantity: number
+          pnl: number
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          trade_id?: string
+          user_id?: string
+          exit_date?: string
+          exit_price?: number
+          quantity?: number
+          pnl?: number
+          notes?: string | null
+        }
+        Relationships: []
+      }
       portfolio_positions: {
         Row: {
           id: string
@@ -425,6 +460,9 @@ export type Profile = Database['public']['Tables']['profiles']['Row']
 export type TradeGroup = Database['public']['Tables']['trade_groups']['Row']
 export type InsertTradeGroup = Database['public']['Tables']['trade_groups']['Insert']
 export type UpdateTradeGroup = Database['public']['Tables']['trade_groups']['Update']
+
+export type TradeExit = Database['public']['Tables']['trade_exits']['Row']
+export type InsertTradeExit = Database['public']['Tables']['trade_exits']['Insert']
 
 // Strategy display labels
 export const STRATEGY_LABELS: Record<string, string> = {
