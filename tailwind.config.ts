@@ -19,7 +19,7 @@ const config: Config = {
         amber: '#f5a623',
         'text-primary': '#dce4f2',
         'text-secondary': '#8896b4',
-        'text-muted': '#475872',
+        'text-muted': '#607898',
       },
       fontFamily: {
         sans: ['Syne', 'sans-serif'],

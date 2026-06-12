@@ -111,6 +111,15 @@ export default function WatchlistPage() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const quickRef = useRef<HTMLInputElement>(null)
 
+  useEffect(() => {
+    const stored = localStorage.getItem('shtj_watchlist_view')
+    if (stored === 'list' || stored === 'kanban') setView(stored)
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('shtj_watchlist_view', view)
+  }, [view])
+
   // ── Load from Supabase (with one-time localStorage migration) ─────────────
   useEffect(() => {
     if (!user) { setHydrated(true); return }

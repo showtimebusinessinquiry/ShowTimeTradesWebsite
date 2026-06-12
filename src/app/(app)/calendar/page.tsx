@@ -196,7 +196,7 @@ export default function CalendarPage() {
         </div>
 
         {/* Week rows */}
-        <div className="bg-bg">
+        <div className="bg-surface">
           {Array.from({ length: totalCells / 7 }).map((_, wi) => {
             const weekDays = Array.from({ length: 7 }, (_, di) => {
               const i = wi * 7 + di
@@ -233,8 +233,8 @@ export default function CalendarPage() {
                         hasActivity && !isSelected && pnl > 0 ? 'border-gain/30 bg-gain/10' :
                         hasActivity && !isSelected && pnl < 0 ? 'border-loss/30 bg-loss/10' :
                         'border-default/20',
-                        !isInMonth ? 'bg-surface/20' : '',
-                        isWeekend && isInMonth && !hasActivity && !isSelected ? 'bg-surface/30' : '',
+                        !isInMonth ? 'bg-bg' : '',
+                        isWeekend && isInMonth && !hasActivity && !isSelected ? 'bg-surface2/40' : '',
                         isSelected ? 'bg-accent/8 ring-1 ring-inset ring-accent/30 border-accent/20' : '',
                         isInMonth ? 'cursor-pointer' : '',
                         hasActivity && !isSelected && pnl > 0 ? 'hover:bg-gain/15' : '',
