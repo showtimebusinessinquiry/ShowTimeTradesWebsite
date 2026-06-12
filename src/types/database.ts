@@ -131,6 +131,7 @@ export interface Database {
           cycle_id: string | null
           group_id: string | null
           mistake_tags: string[] | null
+          close_date: string | null
           created_at: string
           updated_at: string
         }
@@ -154,6 +155,7 @@ export interface Database {
           cycle_id?: string | null
           group_id?: string | null
           mistake_tags?: string[] | null
+          close_date?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -177,6 +179,7 @@ export interface Database {
           cycle_id?: string | null
           group_id?: string | null
           mistake_tags?: string[] | null
+          close_date?: string | null
           updated_at?: string
         }
         Relationships: []

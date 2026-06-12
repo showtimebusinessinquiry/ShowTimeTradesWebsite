@@ -11,6 +11,7 @@ import { TickerLogo } from '@/components/ui/TickerLogo'
 import {
   calcWinRate, calcTotalPnl, calcAvgROC, calcUnrealizedPnl,
   calcMaxDrawdown, calcProfitFactor, calcExpectancy, calcAvgGain, calcAvgLoss,
+  calcBestWorstDay, calcKelly, calcAvgHoldingPeriod,
 } from '@/utils/calculations'
 import { MISTAKE_TAGS } from '@/lib/constants'
 import {
@@ -181,6 +182,16 @@ export default function DashboardPage() {
   const expectancy = useMemo(() => calcExpectancy(tradeResults), [tradeResults])
   const avgGain = useMemo(() => calcAvgGain(tradeResults), [tradeResults])
   const avgLoss = useMemo(() => calcAvgLoss(tradeResults), [tradeResults])
+
+  const bestWorstDay = useMemo(
+    () => calcBestWorstDay(closedTrades.map(t => ({ date: t.date, pnl: t.pnl ?? 0 }))),
+    [closedTrades],
+  )
+  const kelly = useMemo(() => calcKelly(winRate, avgGain, avgLoss), [winRate, avgGain, avgLoss])
+  const avgHold = useMemo(
+    () => calcAvgHoldingPeriod(closedTrades.map(t => ({ date: t.date, close_date: t.close_date }))),
+    [closedTrades],
+  )
 
   const streak = useMemo(() => {
     if (closedTrades.length === 0) return { count: 0, type: null as 'win' | 'loss' | null }
@@ -410,6 +421,7 @@ export default function DashboardPage() {
           variant={winRate >= 0.5 ? 'gain' : 'loss'}
           size="lg"
           sub={`${tradeResults.filter(t => t.pnl > 0).length}W / ${tradeResults.filter(t => t.pnl < 0).length}L${streak.count > 0 ? ` · ${streak.count}${streak.type === 'win' ? 'W' : 'L'} streak` : ''}`}
+          sub2={bestWorstDay ? `Best day: ${fmt(bestWorstDay.best)}` : undefined}
         />
         <MetricCard
           label="Avg P&L %"
@@ -417,6 +429,7 @@ export default function DashboardPage() {
           variant={avgPnlPct >= 0 ? 'gain' : 'loss'}
           size="lg"
           sub="per trade"
+          sub2={avgHold !== null ? `Avg ${Math.round(avgHold)}d hold` : undefined}
         />
       </div>
 
@@ -431,12 +444,14 @@ export default function DashboardPage() {
           value={tradeResults.length === 0 ? '—' : profitFactor === Infinity ? '∞' : profitFactor.toFixed(2)}
           variant={profitFactor >= 1.5 ? 'gain' : profitFactor < 1 ? 'loss' : 'default'}
           sub={tradeResults.length === 0 ? 'gross profit / loss' : `${fmt(expectancy)} expectancy`}
+          sub2={kelly !== null ? `Kelly: ${(kelly * 100).toFixed(1)}%` : undefined}
         />
         <MetricCard
           label="Max Drawdown"
           value={tradeResults.length === 0 ? '—' : fmt(maxDrawdown)}
           variant={maxDrawdown < 0 ? 'loss' : 'default'}
           sub="peak to trough"
+          sub2={bestWorstDay ? `Worst day: ${fmt(bestWorstDay.worst)}` : undefined}
         />
         <MetricCard
           label="SPY YTD"

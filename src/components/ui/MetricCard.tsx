@@ -2,10 +2,11 @@ interface MetricCardProps {
   label: string
   value: string | number
   sub?: string
+  sub2?: string
   variant?: 'default' | 'gain' | 'loss' | 'accent' | 'white'
   size?: 'default' | 'lg'
 }
-export function MetricCard({ label, value, sub, variant = 'default', size = 'default' }: MetricCardProps) {
+export function MetricCard({ label, value, sub, sub2, variant = 'default', size = 'default' }: MetricCardProps) {
   const valueColor = {
     default: 'text-text-primary',
     gain: 'text-gain',
@@ -30,6 +31,7 @@ export function MetricCard({ label, value, sub, variant = 'default', size = 'def
       <div className="text-xs font-semibold text-text-muted tracking-[0.14em] uppercase mb-3">{label}</div>
       <div className={`font-bold font-mono tracking-tight leading-none ${isLg ? 'text-3xl' : 'text-2xl'} ${valueColor}`}>{value}</div>
       {sub && <div className={`text-xs text-text-muted leading-relaxed ${isLg ? 'mt-3' : 'mt-2'}`}>{sub}</div>}
+      {sub2 && <div className="text-xs text-text-muted leading-relaxed mt-0.5">{sub2}</div>}
     </div>
   )
 }

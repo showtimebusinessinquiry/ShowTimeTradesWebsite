@@ -88,6 +88,45 @@ export function calcAllocationPct(positionValue: number, totalPortfolioValue: nu
 
 export type TradeForROC = { entry_price: number; strike: number | null; asset_type: string }
 
+/** Best and worst single-day P&L across all closed trades */
+export function calcBestWorstDay(
+  trades: Array<{ date: string; pnl: number }>,
+): { best: number; bestDate: string; worst: number; worstDate: string } | null {
+  if (trades.length === 0) return null
+  const map: Record<string, number> = {}
+  for (const t of trades) {
+    map[t.date] = (map[t.date] ?? 0) + t.pnl
+  }
+  const entries = Object.entries(map)
+  let best = -Infinity, bestDate = '', worst = Infinity, worstDate = ''
+  for (const [date, pnl] of entries) {
+    if (pnl > best) { best = pnl; bestDate = date }
+    if (pnl < worst) { worst = pnl; worstDate = date }
+  }
+  return { best, bestDate, worst, worstDate }
+}
+
+/** Kelly criterion: fraction of capital to risk. Clamped to [-0.5, 1]. */
+export function calcKelly(winRate: number, avgGain: number, avgLoss: number): number | null {
+  if (avgLoss === 0 || avgGain === 0 || winRate === 0 || winRate === 1) return null
+  const payoffRatio = avgGain / Math.abs(avgLoss)
+  const k = winRate - (1 - winRate) / payoffRatio
+  return Math.min(1, Math.max(-0.5, k))
+}
+
+/** Average holding period in days for closed trades that have a close_date */
+export function calcAvgHoldingPeriod(
+  trades: Array<{ date: string; close_date?: string | null }>,
+): number | null {
+  const withClose = trades.filter(t => t.close_date)
+  if (withClose.length === 0) return null
+  const total = withClose.reduce(
+    (sum, t) => sum + (Date.parse(t.close_date!) - Date.parse(t.date)) / 86400000,
+    0,
+  )
+  return total / withClose.length
+}
+
 /** Average ROC across options trades: entry_price / strike * 100 (%) */
 export function calcAvgROC(trades: TradeForROC[]): number {
   const opts = trades.filter(t => t.asset_type === 'option' && t.strike !== null && t.strike > 0)

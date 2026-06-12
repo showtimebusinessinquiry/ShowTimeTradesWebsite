@@ -366,6 +366,7 @@ export default function TradeLogPage() {
       notes: form.notes.trim() || null,
       mistake_tags: form.mistake_tags.length > 0 ? form.mistake_tags : null,
       group_id: resolvedGroupId,
+      close_date: form.exit_price ? new Date().toISOString().slice(0, 10) : null,
     }
 
     if (editingTrade) {
