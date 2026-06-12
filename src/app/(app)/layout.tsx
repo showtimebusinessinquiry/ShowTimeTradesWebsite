@@ -104,6 +104,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <span className="text-text-muted text-xs font-mono hidden sm:block">
               {username ? `@${username}` : user.email}
             </span>
+          <Link
+            href="/settings"
+            className="text-xs text-text-muted hover:text-text-primary transition-colors tracking-wide"
+          >
+            Settings
+          </Link>
           <button
             onClick={async () => { await signOut(); router.push('/') }}
             className="text-xs text-text-muted hover:text-loss transition-colors tracking-wide"
