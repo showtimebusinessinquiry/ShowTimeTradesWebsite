@@ -124,5 +124,5 @@ async function fetchFinnhubQuote(symbol: string): Promise<StockQuote | null> {
 // --- Public entry point ---
 
 export async function fetchQuote(symbol: string): Promise<StockQuote | null> {
-  return (await fetchYahooQuote(symbol)) ?? (await fetchFinnhubQuote(symbol))
+  return (await fetchFinnhubQuote(symbol)) ?? (await fetchYahooQuote(symbol))
 }

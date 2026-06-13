@@ -42,26 +42,31 @@ export function TickerBanner() {
     )
   }
 
-  const items = [...tickers, ...tickers, ...tickers, ...tickers]
-
   return (
     <div className="h-8 bg-surface border-b border-default overflow-hidden flex items-center select-none">
-      <div className="inline-flex items-center gap-8 animate-ticker will-change-transform" style={{ whiteSpace: 'nowrap' }}>
-        {items.map((t, i) => {
-          const changeNum = parseFloat(t.change)
-          const isPos = changeNum >= 0
-          return (
-            <span key={i} className="text-xs font-mono flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap">
-              <span className="text-text-secondary font-semibold tracking-wider">{t.symbol}</span>
-              <span className="text-text-muted">${t.price}</span>
-              <span className={isPos ? 'text-gain' : 'text-loss'}>
-                {isPos ? '+' : ''}{t.change}%
+      {[0, 1].map(copy => (
+        <div
+          key={copy}
+          aria-hidden={copy === 1 || undefined}
+          className="flex items-center gap-8 animate-ticker shrink-0 min-w-max will-change-transform"
+          style={{ whiteSpace: 'nowrap' }}
+        >
+          {tickers.map((t, i) => {
+            const changeNum = parseFloat(t.change)
+            const isPos = changeNum >= 0
+            return (
+              <span key={i} className="text-xs font-mono flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap">
+                <span className="text-text-secondary font-semibold tracking-wider">{t.symbol}</span>
+                <span className="text-text-muted">${t.price}</span>
+                <span className={isPos ? 'text-gain' : 'text-loss'}>
+                  {isPos ? '+' : ''}{t.change}%
+                </span>
+                <span className="text-text-muted opacity-50 ml-2">·</span>
               </span>
-              <span className="text-text-muted opacity-50 ml-2">·</span>
-            </span>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      ))}
     </div>
   )
 }
