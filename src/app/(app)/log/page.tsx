@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import type { Trade, InsertTrade, UpdateTrade, AssetType, TradeStrategy, TradeGroup, InsertTradeGroup, TradeExit, InsertTradeExit } from '@/types/database'
@@ -139,6 +139,11 @@ export default function TradeLogPage() {
   const [trimForm, setTrimForm] = useState({ exit_date: '', exit_price: '', quantity: '', notes: '' })
   const [trimSaving, setTrimSaving] = useState(false)
   const [trimError, setTrimError] = useState<string | null>(null)
+  const [editingExit, setEditingExit] = useState<TradeExit | null>(null)
+  const [editExitParent, setEditExitParent] = useState<Trade | null>(null)
+  const [exitEditForm, setExitEditForm] = useState({ exit_date: '', exit_price: '', quantity: '', notes: '' })
+  const [exitEditError, setExitEditError] = useState<string | null>(null)
+  const [exitEditSaving, setExitEditSaving] = useState(false)
 
   const notify = (msg: string, ok = true) => {
     setToast({ msg, ok })
@@ -258,6 +263,12 @@ export default function TradeLogPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
+
+    const existingExits = editingTrade ? (exitsMap[editingTrade.id] ?? []) : []
+    if (existingExits.length > 0 && form.exit_price) {
+      setFormError('This trade has partial exits. Remove them first, or close via the Trim feature.')
+      return
+    }
 
     if (!form.ticker.trim()) {
       setFormError('Ticker is required.')
@@ -496,6 +507,76 @@ export default function TradeLogPage() {
     setTrimSaving(false)
     closeTrim()
     notify('Position trimmed.')
+    await fetchAll()
+  }
+
+  const openEditExit = (ex: TradeExit, parent: Trade) => {
+    setEditingExit(ex)
+    setEditExitParent(parent)
+    setExitEditForm({
+      exit_date: ex.exit_date,
+      exit_price: String(ex.exit_price),
+      quantity: String(ex.quantity),
+      notes: ex.notes ?? '',
+    })
+    setExitEditError(null)
+  }
+
+  const closeEditExit = () => {
+    setEditingExit(null)
+    setEditExitParent(null)
+    setExitEditError(null)
+  }
+
+  const handleExitUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingExit || !editExitParent || !user) return
+    setExitEditError(null)
+
+    const exitPrice = parseFloat(exitEditForm.exit_price)
+    const qty = parseInt(exitEditForm.quantity, 10)
+    if (isNaN(exitPrice) || exitPrice <= 0) { setExitEditError('Exit price is required.'); return }
+    if (isNaN(qty) || qty <= 0) { setExitEditError('Quantity must be at least 1.'); return }
+
+    const otherExits = (exitsMap[editExitParent.id] ?? []).filter(e => e.id !== editingExit.id)
+    const maxQty = calcRemainingQty(editExitParent.quantity, otherExits)
+    if (qty > maxQty) { setExitEditError(`Max quantity is ${maxQty}.`); return }
+
+    const pnl = calcExitPnl(editExitParent.strategy, editExitParent.entry_price, exitPrice, qty, editExitParent.asset_type)
+
+    setExitEditSaving(true)
+    const { error } = await supabase.from('trade_exits').update({
+      exit_date: exitEditForm.exit_date,
+      exit_price: exitPrice,
+      quantity: qty,
+      pnl,
+      notes: exitEditForm.notes.trim() || null,
+    }).eq('id', editingExit.id)
+
+    if (error) { setExitEditError(error.message); setExitEditSaving(false); return }
+
+    const newRemaining = calcRemainingQty(editExitParent.quantity, [...otherExits, { quantity: qty }])
+    if (newRemaining <= 0) {
+      await supabase.from('trades').update({ close_date: exitEditForm.exit_date }).eq('id', editExitParent.id)
+    } else {
+      await supabase.from('trades').update({ close_date: null }).eq('id', editExitParent.id)
+    }
+
+    setExitEditSaving(false)
+    closeEditExit()
+    notify('Exit updated.')
+    await fetchAll()
+  }
+
+  const handleExitDelete = async (ex: TradeExit, parent: Trade) => {
+    const { error } = await supabase.from('trade_exits').delete().eq('id', ex.id)
+    if (error) { notify(`Delete failed: ${error.message}`, false); return }
+    const remainingExits = (exitsMap[parent.id] ?? []).filter(e => e.id !== ex.id)
+    const newRemaining = calcRemainingQty(parent.quantity, remainingExits)
+    if (newRemaining > 0) {
+      await supabase.from('trades').update({ close_date: null }).eq('id', parent.id)
+    }
+    notify('Exit deleted.')
     await fetchAll()
   }
 
@@ -793,9 +874,8 @@ export default function TradeLogPage() {
                   ? ((trade.entry_price / trade.strike) * 100).toFixed(2)
                   : null
                 return (
-                  <>
+                  <Fragment key={trade.id}>
                   <tr
-                    key={trade.id}
                     className={`border-b border-default hover:bg-surface2 transition-colors ${exits.length > 0 ? '' : 'last:border-0'} ${i % 2 === 0 ? 'bg-surface' : 'bg-bg'}`}
                   >
                     <td className="px-4 py-3 text-text-secondary font-mono text-xs">{trade.date}</td>
@@ -874,7 +954,15 @@ export default function TradeLogPage() {
                         })() : '—'}
                     </td>
                     <td className={`px-4 py-3 text-right font-mono text-xs ${pnlColor}`}>
-                      <div>{trade.pnl_pct != null && exits.length === 0 ? `${trade.pnl_pct > 0 ? '+' : ''}${trade.pnl_pct.toFixed(2)}%` : '—'}</div>
+                      <div>
+                        {exits.length > 0 ? (() => {
+                          const closedQty = exits.reduce((s, e) => s + e.quantity, 0)
+                          const mult = trade.asset_type === 'option' ? 100 : 1
+                          const basis = trade.entry_price * closedQty * mult
+                          const pct = basis > 0 ? (effectivePnl / basis) * 100 : 0
+                          return `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`
+                        })() : trade.pnl_pct != null ? `${trade.pnl_pct > 0 ? '+' : ''}${trade.pnl_pct.toFixed(2)}%` : '—'}
+                      </div>
                       {roc && <div className="text-text-muted text-[10px] mt-0.5">ROC {roc}%</div>}
                     </td>
                     <td className="px-4 py-3 text-right text-text-muted font-mono text-xs">
@@ -941,6 +1029,7 @@ export default function TradeLogPage() {
                                 <th className="px-3 py-2 text-right text-[10px] font-semibold text-text-muted tracking-[0.12em] uppercase">Qty</th>
                                 <th className="px-3 py-2 text-right text-[10px] font-semibold text-text-muted tracking-[0.12em] uppercase">P&L</th>
                                 <th className="px-3 py-2 text-left text-[10px] font-semibold text-text-muted tracking-[0.12em] uppercase">Notes</th>
+                                <th className="px-3 py-2" />
                               </tr>
                             </thead>
                             <tbody>
@@ -953,6 +1042,12 @@ export default function TradeLogPage() {
                                     {ex.pnl > 0 ? '+' : ''}${ex.pnl.toFixed(2)}
                                   </td>
                                   <td className="px-3 py-2 text-text-muted text-[10px]">{ex.notes ?? '—'}</td>
+                                  <td className="px-3 py-2 text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <button onClick={() => openEditExit(ex, trade)} className="text-[10px] font-semibold tracking-[0.1em] uppercase text-text-muted hover:text-accent transition-colors">Edit</button>
+                                      <button onClick={() => handleExitDelete(ex, trade)} className="text-[10px] font-semibold tracking-[0.1em] uppercase text-text-muted hover:text-loss transition-colors">Del</button>
+                                    </div>
+                                  </td>
                                 </tr>
                               ))}
                               <tr className="bg-surface2 border-t border-default/50">
@@ -962,8 +1057,17 @@ export default function TradeLogPage() {
                                   {exits.reduce((s, e) => s + e.quantity, 0)}/{trade.quantity}
                                 </td>
                                 <td className={`px-3 py-2 font-mono font-bold text-right ${effectivePnl > 0 ? 'text-gain' : effectivePnl < 0 ? 'text-loss' : 'text-text-muted'}`}>
-                                  {effectivePnl > 0 ? '+' : ''}${effectivePnl.toFixed(2)}
+                                  <div>{effectivePnl > 0 ? '+' : ''}${effectivePnl.toFixed(2)}</div>
+                                  {(() => {
+                                    const closedQty = exits.reduce((s, e) => s + e.quantity, 0)
+                                    const mult = trade.asset_type === 'option' ? 100 : 1
+                                    const basis = trade.entry_price * closedQty * mult
+                                    if (basis <= 0) return null
+                                    const pct = (effectivePnl / basis) * 100
+                                    return <div className="text-[10px] font-normal text-text-muted mt-0.5">{pct > 0 ? '+' : ''}{pct.toFixed(2)}% return</div>
+                                  })()}
                                 </td>
+                                <td className="px-3 py-2" />
                                 <td className="px-3 py-2" />
                               </tr>
                             </tbody>
@@ -972,7 +1076,7 @@ export default function TradeLogPage() {
                       </td>
                     </tr>
                   )}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>
@@ -1065,6 +1169,98 @@ export default function TradeLogPage() {
                 {trimSaving ? 'Saving...' : 'Record Exit'}
               </Button>
               <Button type="button" variant="secondary" onClick={closeTrim}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Edit Exit Modal */}
+      <Modal
+        open={editingExit !== null}
+        onClose={closeEditExit}
+        title={editExitParent ? `Edit Exit — ${editExitParent.ticker}` : 'Edit Exit'}
+        width="max-w-md"
+      >
+        {editingExit && editExitParent && (
+          <form onSubmit={handleExitUpdate} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Exit Date</label>
+                <input
+                  type="date"
+                  value={exitEditForm.exit_date}
+                  onChange={e => setExitEditForm(p => ({ ...p, exit_date: e.target.value }))}
+                  required
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Exit Price</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={exitEditForm.exit_price}
+                  onChange={e => setExitEditForm(p => ({ ...p, exit_price: e.target.value }))}
+                  required
+                  placeholder="0.00"
+                  className={inputClass}
+                />
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>
+                Quantity
+                <span className="ml-2 normal-case tracking-normal text-text-muted font-normal">
+                  (max {calcRemainingQty(editExitParent.quantity, (exitsMap[editExitParent.id] ?? []).filter(e => e.id !== editingExit.id))})
+                </span>
+              </label>
+              <input
+                type="number"
+                step="1"
+                min="1"
+                max={calcRemainingQty(editExitParent.quantity, (exitsMap[editExitParent.id] ?? []).filter(e => e.id !== editingExit.id))}
+                value={exitEditForm.quantity}
+                onChange={e => setExitEditForm(p => ({ ...p, quantity: e.target.value }))}
+                required
+                className={inputClass}
+              />
+            </div>
+            {exitEditForm.exit_price && exitEditForm.quantity && (
+              <div>
+                <label className={labelClass}>Est. P&L <span className="ml-2 normal-case tracking-normal text-text-muted font-normal">auto</span></label>
+                <div className={`${readonlyInputClass} font-mono font-bold ${(() => {
+                  const p = calcExitPnl(editExitParent.strategy, editExitParent.entry_price, parseFloat(exitEditForm.exit_price), parseInt(exitEditForm.quantity, 10), editExitParent.asset_type)
+                  return p > 0 ? 'text-gain' : p < 0 ? 'text-loss' : 'text-text-muted'
+                })()}`}>
+                  {(() => {
+                    const p = calcExitPnl(editExitParent.strategy, editExitParent.entry_price, parseFloat(exitEditForm.exit_price), parseInt(exitEditForm.quantity, 10), editExitParent.asset_type)
+                    return `${p > 0 ? '+' : ''}$${p.toFixed(2)}`
+                  })()}
+                </div>
+              </div>
+            )}
+            <div>
+              <label className={labelClass}>Notes <span className="ml-2 normal-case tracking-normal text-text-muted font-normal">optional</span></label>
+              <textarea
+                value={exitEditForm.notes}
+                onChange={e => setExitEditForm(p => ({ ...p, notes: e.target.value }))}
+                rows={2}
+                placeholder="Reason for partial close..."
+                className={`${inputClass} resize-none`}
+              />
+            </div>
+            {exitEditError && (
+              <div className="text-loss text-sm bg-loss/10 border border-loss/20 px-3 py-2 rounded-lg">
+                {exitEditError}
+              </div>
+            )}
+            <div className="flex gap-3 pt-2">
+              <Button type="submit" variant="primary" disabled={exitEditSaving}>
+                {exitEditSaving ? 'Saving...' : 'Save Changes'}
+              </Button>
+              <Button type="button" variant="secondary" onClick={closeEditExit}>
                 Cancel
               </Button>
             </div>
@@ -1225,8 +1421,12 @@ export default function TradeLogPage() {
                   value={form.exit_price}
                   onChange={e => setForm(p => ({ ...p, exit_price: e.target.value }))}
                   placeholder="0.00"
-                  className={inputClass}
+                  disabled={!!(editingTrade && (exitsMap[editingTrade.id]?.length ?? 0) > 0)}
+                  className={`${inputClass} ${editingTrade && (exitsMap[editingTrade.id]?.length ?? 0) > 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
                 />
+                {editingTrade && (exitsMap[editingTrade.id]?.length ?? 0) > 0 && (
+                  <p className="text-[10px] text-text-muted mt-1">Managed via partial exits</p>
+                )}
               </div>
               <div>
                 <label className={labelClass}>Quantity</label>

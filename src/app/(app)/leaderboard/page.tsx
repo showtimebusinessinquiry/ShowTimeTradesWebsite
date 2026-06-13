@@ -6,6 +6,9 @@ import type { Profile } from '@/types/database'
 import { STRATEGY_LABELS } from '@/types/database'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { calcMaxDrawdown, calcProfitFactor, calcAvgGain, calcAvgLoss } from '@/utils/calculations'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+
+const LINE_COLORS = ['#00e676','#f59e0b','#60a5fa','#f472b6','#a78bfa','#34d399','#fb923c','#e879f9']
 
 type SortKey = 'username' | 'ticker' | 'strategy' | 'date' | 'pnl'
 type SortDir = 'asc' | 'desc'
@@ -79,6 +82,7 @@ export default function LeaderboardPage() {
   const [filterUser, setFilterUser] = useState('all')
   const [filterTicker, setFilterTicker] = useState('all')
   const [filterStrategy, setFilterStrategy] = useState('all')
+  const [activeTab, setActiveTab] = useState<'rankings' | 'chart'>('rankings')
 
   useEffect(() => {
     async function load() {
@@ -130,6 +134,35 @@ export default function LeaderboardPage() {
   const userOptions = useMemo(() => Array.from(new Set(trades.map(t => t.username))).sort(), [trades])
   const tickerOptions = useMemo(() => Array.from(new Set(trades.map(t => t.ticker))).sort(), [trades])
   const strategyOptions = useMemo(() => Array.from(new Set(trades.map(t => t.strategy))).sort(), [trades])
+
+  const cumulativeChartData = useMemo(() => {
+    const userDayMap: Record<string, Record<string, number>> = {}
+    for (const t of trades) {
+      if (t.pnl == null) continue
+      if (!userDayMap[t.username]) userDayMap[t.username] = {}
+      userDayMap[t.username][t.date] = (userDayMap[t.username][t.date] ?? 0) + t.pnl
+    }
+    const userLines: Record<string, { date: string; value: number }[]> = {}
+    for (const [username, dayMap] of Object.entries(userDayMap)) {
+      const dates = Object.keys(dayMap).sort()
+      let cum = 0
+      userLines[username] = dates.map(date => { cum += dayMap[date]; return { date, value: cum } })
+    }
+    const allDates = [...new Set(Object.values(userLines).flatMap(pts => pts.map(p => p.date)))].sort()
+    return allDates.map(date => {
+      const point: Record<string, string | number> = { date }
+      for (const [username, pts] of Object.entries(userLines)) {
+        const last = pts.filter(p => p.date <= date).at(-1)
+        if (last) point[username] = parseFloat(last.value.toFixed(2))
+      }
+      return point
+    })
+  }, [trades])
+
+  const chartUsernames = useMemo(
+    () => userStats.filter(u => u.closedTrades > 0).map(u => u.username),
+    [userStats]
+  )
 
   const filtered = useMemo(() => {
     let data = [...trades]
@@ -199,8 +232,20 @@ USING (true);`}</pre>
         subtitle={`${trades.length} trades · ${userStats.length} trader${userStats.length !== 1 ? 's' : ''}`}
       />
 
+      {/* Tab bar */}
+      <div className="flex gap-0 mb-6 border-b border-default/40">
+        {(['rankings', 'chart'] as const).map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-xs font-semibold tracking-[0.1em] uppercase transition-colors border-b-2 -mb-px ${
+              activeTab === tab ? 'border-accent text-accent' : 'border-transparent text-text-muted hover:text-text-secondary'
+            }`}>
+            {tab === 'rankings' ? 'Rankings' : 'P/L Chart'}
+          </button>
+        ))}
+      </div>
+
       {/* Podium — top 3 */}
-      {userStats.length > 0 && (
+      {activeTab === 'rankings' && userStats.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
           {userStats.slice(0, 3).map((u, i) => (
             <div key={u.username} className="relative rounded-xl border border-default/50 bg-surface overflow-hidden p-4">
@@ -237,7 +282,7 @@ USING (true);`}</pre>
       )}
 
       {/* Full rankings table (if > 3 users) */}
-      {userStats.length > 3 && (
+      {activeTab === 'rankings' && userStats.length > 3 && (
         <div className="mb-8 rounded-xl border border-default/50 overflow-hidden bg-surface">
           <div className="px-4 py-2.5 border-b border-default/40 bg-surface2/50">
             <span className="text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">All Rankings</span>
@@ -271,7 +316,9 @@ USING (true);`}</pre>
         </div>
       )}
 
-      {/* Filters */}
+      {/* Filters + Trades table */}
+      {activeTab === 'rankings' && (
+      <>
       <div className="flex flex-wrap items-center gap-2.5 mb-4">
         <select
           value={filterUser}
@@ -348,6 +395,51 @@ USING (true);`}</pre>
           </tbody>
         </table>
       </div>
+      </>
+      )}
+
+      {/* P/L Chart */}
+      {activeTab === 'chart' && (
+        <div className="rounded-xl border border-default/50 bg-surface p-4">
+          <div className="text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase mb-4">
+            Cumulative P&amp;L — All Traders
+          </div>
+          {cumulativeChartData.length < 2 ? (
+            <div className="text-center text-text-muted text-xs py-16">Not enough closed trades to display</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={360}>
+              <LineChart data={cumulativeChartData} margin={{ top: 4, right: 16, bottom: 0, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#888' }}
+                  tickFormatter={(d: string) => {
+                    const [, m, day] = d.split('-')
+                    return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1]} ${parseInt(day)}`
+                  }}
+                />
+                <YAxis tick={{ fontSize: 10, fill: '#888' }}
+                  tickFormatter={(v: number) => Math.abs(v) >= 1000 ? `$${(v/1000).toFixed(1)}K` : `$${v}`}
+                  width={60}
+                />
+                <Tooltip
+                  contentStyle={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }}
+                  formatter={(value: number, name: string) => [
+                    (value >= 0 ? '+$' : '-$') + Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }),
+                    `@${name}`
+                  ]}
+                  labelFormatter={(d: string) => d}
+                />
+                <Legend formatter={(v: string) => `@${v}`} wrapperStyle={{ fontSize: 11 }} />
+                {chartUsernames.map((username, i) => (
+                  <Line key={username} type="monotone" dataKey={username}
+                    stroke={LINE_COLORS[i % LINE_COLORS.length]}
+                    strokeWidth={2} dot={false} connectNulls
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      )}
     </div>
   )
 }

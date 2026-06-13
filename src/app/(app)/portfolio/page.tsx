@@ -329,7 +329,9 @@ export default function PortfolioPage() {
   // Totals — use live price vs entry price; never fall back to stored current_price
   const totalCost = positions.reduce((sum, p) => sum + calcCostBasis(p.entry_price, p.quantity), 0)
   const totalValue = positions.reduce((sum, p) => {
-    const cur = p.ticker === 'CASH' ? 1 : (livePrices[p.ticker] ?? p.entry_price)
+    const cur = p.ticker === 'CASH' ? 1
+      : p.asset_type === 'option' ? (p.current_price ?? p.entry_price)
+      : (livePrices[p.ticker] ?? p.entry_price)
     return sum + calcCurrentValue(cur, p.quantity)
   }, 0)
   const totalUnrealizedPnl = totalValue - totalCost

@@ -74,7 +74,7 @@ export async function fetchYahooQuote(symbol: string): Promise<StockQuote | null
 
 // --- Yahoo Finance YTD historical ---
 
-export async function fetchYahooYTD(symbol: string): Promise<number | null> {
+async function fetchYahooYTDInternal(symbol: string): Promise<number | null> {
   const auth = await getCrumb()
   if (!auth) return null
   try {
@@ -92,6 +92,31 @@ export async function fetchYahooYTD(symbol: string): Promise<number | null> {
   } catch {
     return null
   }
+}
+
+async function fetchFinnhubYTD(symbol: string): Promise<number | null> {
+  const key = process.env.FINNHUB_API_KEY
+  if (!key) return null
+  try {
+    const now = Math.floor(Date.now() / 1000)
+    const jan1 = Math.floor(new Date(new Date().getFullYear(), 0, 1).getTime() / 1000)
+    const res = await fetch(
+      `https://finnhub.io/api/v1/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=D&from=${jan1}&to=${now}&token=${key}`,
+      { next: { revalidate: 86400 } },
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    if (data.s !== 'ok' || !data.c || data.c.length < 2) return null
+    const first: number = data.c[0]
+    const last: number = data.c[data.c.length - 1]
+    return ((last - first) / first) * 100
+  } catch {
+    return null
+  }
+}
+
+export async function fetchYahooYTD(symbol: string): Promise<number | null> {
+  return (await fetchFinnhubYTD(symbol)) ?? (await fetchYahooYTDInternal(symbol))
 }
 
 // --- Finnhub fallback ---
