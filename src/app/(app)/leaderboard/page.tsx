@@ -103,14 +103,16 @@ export default function LeaderboardPage() {
         return
       }
 
+      const profileRows = (profiles ?? []) as unknown as { user_id: string; username: string; show_on_leaderboard: boolean }[]
+
       const userMap: Record<string, string> = {}
-      for (const p of (profiles ?? []) as Profile[]) {
+      for (const p of profileRows) {
         userMap[p.user_id] = p.username
       }
 
       setProfileMap(
         Object.fromEntries(
-          (profiles ?? []).map((p: { user_id: string; username: string; show_on_leaderboard?: boolean }) => [
+          profileRows.map(p => [
             p.username,
             { user_id: p.user_id, show_on_leaderboard: p.show_on_leaderboard ?? false },
           ])
