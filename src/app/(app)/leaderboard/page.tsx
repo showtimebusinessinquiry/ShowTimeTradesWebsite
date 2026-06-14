@@ -89,7 +89,7 @@ export default function LeaderboardPage() {
   useEffect(() => {
     async function load() {
       const [{ data: profiles, error: pErr }, { data: tradesData, error: tErr }] = await Promise.all([
-        supabase.from('profiles').select('user_id, username, show_on_leaderboard'),
+        supabase.from('profiles').select('user_id, username, show_on_leaderboard' as any),
         supabase.from('leaderboard_trades' as any).select('id, user_id, date, ticker, strategy, pnl').order('date', { ascending: false }).limit(1000),
       ])
 
