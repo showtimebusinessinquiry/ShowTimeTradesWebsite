@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { fetchYahooYTD } from '../../lib/yahoo-finance'
+import { fetchYahooYTD } from '@/lib/yahoo-finance'
 
 export const revalidate = 3600 // cache response for 1 hour
 
