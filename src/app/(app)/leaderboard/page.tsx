@@ -90,7 +90,7 @@ export default function LeaderboardPage() {
     async function load() {
       const [{ data: profiles, error: pErr }, { data: tradesData, error: tErr }] = await Promise.all([
         supabase.from('profiles').select('user_id, username, show_on_leaderboard'),
-        supabase.from('leaderboard_trades').select('id, user_id, date, ticker, strategy, pnl').order('date', { ascending: false }).limit(1000),
+        supabase.from('leaderboard_trades' as any).select('id, user_id, date, ticker, strategy, pnl').order('date', { ascending: false }).limit(1000),
       ])
 
       if (pErr || tErr) {
