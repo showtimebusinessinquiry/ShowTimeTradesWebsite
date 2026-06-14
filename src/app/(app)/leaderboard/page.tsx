@@ -87,8 +87,8 @@ export default function LeaderboardPage() {
   useEffect(() => {
     async function load() {
       const [{ data: profiles, error: pErr }, { data: tradesData, error: tErr }] = await Promise.all([
-        supabase.from('profiles').select('user_id, username'),
-        supabase.from('trades').select('id, user_id, date, ticker, strategy, pnl').order('date', { ascending: false }),
+        supabase.from('profiles').select('user_id, username, show_on_leaderboard'),
+        supabase.from('trades').select('id, user_id, date, ticker, strategy, pnl').order('date', { ascending: false }).limit(1000),
       ])
 
       if (pErr || tErr) {
@@ -101,13 +101,23 @@ export default function LeaderboardPage() {
         return
       }
 
+      // Option B: filter to only users who have opted in (show_on_leaderboard === true)
+      // Swap to leaderboard_trades view (Option A) once migration 015 is applied
+      const optedInUserIds = new Set(
+        (profiles ?? [])
+          .filter((p: { show_on_leaderboard?: boolean }) => p.show_on_leaderboard === true)
+          .map((p: { user_id: string }) => p.user_id)
+      )
+
       const userMap: Record<string, string> = {}
       for (const p of (profiles ?? []) as Profile[]) {
         userMap[p.user_id] = p.username
       }
 
       setTrades(
-        (tradesData ?? []).map(t => ({ ...t, username: userMap[t.user_id] ?? 'unknown' }))
+        (tradesData ?? [])
+          .filter(t => optedInUserIds.has(t.user_id))
+          .map(t => ({ ...t, username: userMap[t.user_id] ?? 'unknown' }))
       )
       setLoading(false)
     }
@@ -239,7 +249,7 @@ USING (true);`}</pre>
             className={`px-4 py-2 text-xs font-semibold tracking-[0.1em] uppercase transition-colors border-b-2 -mb-px ${
               activeTab === tab ? 'border-accent text-accent' : 'border-transparent text-text-muted hover:text-text-secondary'
             }`}>
-            {tab === 'rankings' ? 'Rankings' : 'P/L Chart'}
+            {tab === 'rankings' ? 'Rankings' : 'P&L Chart'}
           </button>
         ))}
       </div>
@@ -294,6 +304,7 @@ USING (true);`}</pre>
                 <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">User</th>
                 <th className="text-right px-4 py-2.5 text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">Trades</th>
                 <th className="text-right px-4 py-2.5 text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">Win %</th>
+                <th className="text-right px-4 py-2.5 text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">Edge Score</th>
                 <th className="text-right px-4 py-2.5 text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">Total P&L</th>
               </tr>
             </thead>
@@ -305,6 +316,11 @@ USING (true);`}</pre>
                   <td className="px-4 py-2.5 text-right font-mono text-text-muted">{u.trades}</td>
                   <td className="px-4 py-2.5 text-right font-mono text-text-muted">
                     {u.closedTrades > 0 ? `${Math.round(u.wins / u.closedTrades * 100)}%` : '—'}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono text-text-muted">
+                    {u.edgeScore !== null ? (
+                      <span style={{ color: getEdgeRank(u.edgeScore).color }}>{u.edgeScore.toFixed(1)}</span>
+                    ) : '—'}
                   </td>
                   <td className={`px-4 py-2.5 text-right font-mono font-bold ${u.pnl >= 0 ? 'text-gain' : 'text-loss'}`}>
                     {fmtPnl(u.pnl)}

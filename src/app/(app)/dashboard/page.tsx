@@ -8,6 +8,7 @@ import { STRATEGY_LABELS } from '@/types/database'
 import { MetricCard } from '@/components/ui/MetricCard'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { TickerLogo } from '@/components/ui/TickerLogo'
+import Link from 'next/link'
 import {
   calcWinRate, calcTotalPnl, calcAvgROC, calcUnrealizedPnl,
   calcMaxDrawdown, calcProfitFactor, calcExpectancy, calcAvgGain, calcAvgLoss,
@@ -198,11 +199,11 @@ export default function DashboardPage() {
   const streak = useMemo(() => {
     if (closedTrades.length === 0) return { count: 0, type: null as 'win' | 'loss' | null }
     const lastPnl = closedTrades[closedTrades.length - 1].pnl ?? 0
-    const type: 'win' | 'loss' = lastPnl >= 0 ? 'win' : 'loss'
+    const type: 'win' | 'loss' = lastPnl > 0 ? 'win' : 'loss'
     let count = 0
     for (let i = closedTrades.length - 1; i >= 0; i--) {
       const pnl = closedTrades[i].pnl ?? 0
-      if ((type === 'win' && pnl >= 0) || (type === 'loss' && pnl < 0)) count++
+      if ((type === 'win' && pnl > 0) || (type === 'loss' && pnl < 0)) count++
       else break
     }
     return { count, type }
@@ -416,6 +417,7 @@ export default function DashboardPage() {
           variant={openPnl >= 0 ? 'gain' : 'loss'}
           size="lg"
           sub={`${positions.filter(p => p.ticker !== 'CASH').length} positions`}
+          sub2="All open positions"
         />
         <MetricCard
           label="Win Rate"
@@ -507,10 +509,10 @@ export default function DashboardPage() {
                   >
                     <td className="px-4 py-2 text-text-secondary font-mono">{trade.date}</td>
                     <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
+                      <Link href="/log" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
                         <TickerLogo ticker={trade.ticker} size={18} />
                         <span className="text-text-primary font-bold tracking-wider">{trade.ticker}</span>
-                      </div>
+                      </Link>
                     </td>
                     <td className="px-4 py-2 text-text-secondary">{STRATEGY_LABELS[trade.strategy] ?? trade.strategy}</td>
                     <td className="px-4 py-2 text-right text-text-primary font-mono">${trade.entry_price?.toFixed(2)}</td>
@@ -531,11 +533,29 @@ export default function DashboardPage() {
               </tbody>
             </table>
           </div>
+          <div className="mt-2 flex justify-end">
+            <Link href="/log" className="text-xs text-text-muted hover:text-text-secondary transition-colors">
+              View all in Trade Log →
+            </Link>
+          </div>
         </div>
       )}
 
       {/* Charts */}
-      {closedTrades.length === 0 ? (
+      {trades.length === 0 ? (
+        <div className="border border-default bg-surface p-12 text-center rounded-xl">
+          <div className="text-text-primary text-base font-semibold mb-2">Welcome to your trading journal</div>
+          <div className="text-text-muted text-sm mb-6 max-w-sm mx-auto">
+            Track your trades, measure your edge, and spot what&apos;s working. Start by logging your first trade.
+          </div>
+          <Link
+            href="/log"
+            className="inline-block px-6 py-2.5 rounded-full border border-accent text-accent bg-accent/10 text-sm font-semibold hover:bg-accent/20 transition-colors"
+          >
+            Add your first trade →
+          </Link>
+        </div>
+      ) : closedTrades.length === 0 ? (
         <div className="border border-default bg-surface p-12 text-center rounded-xl">
           <div className="text-text-muted text-sm">No closed trades in this date range.</div>
           <div className="text-text-muted text-xs mt-2">
@@ -630,7 +650,10 @@ export default function DashboardPage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke={CHART_COLORS.surface} strokeDasharray="2 4" />
-                <XAxis dataKey="date" tick={{ fill: CHART_COLORS.muted, fontSize: 10 }} tickLine={false} axisLine={false} />
+                <XAxis dataKey="date" tick={{ fill: CHART_COLORS.muted, fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(d: string) => {
+                  const dt = new Date(d + 'T12:00:00')
+                  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                }} />
                 <YAxis tick={{ fill: CHART_COLORS.muted, fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={v => `$${v}`} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="pnl" stroke="url(#pnlLineGrad)" fill="url(#pnlFillGrad)" strokeWidth={2} dot={false} name="P&L" />

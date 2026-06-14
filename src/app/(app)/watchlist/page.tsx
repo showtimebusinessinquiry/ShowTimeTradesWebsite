@@ -102,6 +102,7 @@ export default function WatchlistPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<FormVals>(defaultForm([]))
   const [symPreview, setSymPreview] = useState<{ price: number } | 'loading' | 'invalid' | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOverCol, setDragOverCol] = useState<Status | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
@@ -277,7 +278,7 @@ export default function WatchlistPage() {
     setSymPreview(null)
     setPanelOpen(true)
   }
-  const closePanel = () => { setPanelOpen(false); setEditingId(null); setSymPreview(null) }
+  const closePanel = () => { setPanelOpen(false); setEditingId(null); setSymPreview(null); setSaveError(null) }
 
   const handleSymBlur = async () => {
     const sym = form.symbol.trim().toUpperCase()
@@ -295,6 +296,7 @@ export default function WatchlistPage() {
   const handleSave = async () => {
     const sym = form.symbol.trim().toUpperCase()
     if (!sym || !form.listId || !user) return
+    setSaveError(null)
     const now = new Date().toISOString()
     const payload = {
       ticker: sym,
@@ -311,18 +313,24 @@ export default function WatchlistPage() {
     }
     if (editingId) {
       const { error } = await supabase.from('watchlist').update(payload).eq('id', editingId)
-      if (!error) {
-        setTickers(prev => prev.map(t => t.id === editingId
-          ? { ...t, symbol: sym, listId: form.listId, bias: form.bias, status: form.status, entry: payload.entry_price, target: payload.target_price, stop: payload.stop_price, earningsDate: payload.earnings_date, thesis: form.thesis, updatedAt: now }
-          : t))
+      if (error) {
+        setSaveError('Failed to save. Please try again.')
+        return
       }
+      setTickers(prev => prev.map(t => t.id === editingId
+        ? { ...t, symbol: sym, listId: form.listId, bias: form.bias, status: form.status, entry: payload.entry_price, target: payload.target_price, stop: payload.stop_price, earningsDate: payload.earnings_date, thesis: form.thesis, updatedAt: now }
+        : t))
     } else {
       const { data, error } = await supabase
         .from('watchlist')
         .insert({ user_id: user.id, ...payload })
         .select()
         .single()
-      if (!error && data) {
+      if (error) {
+        setSaveError('Failed to save. Please try again.')
+        return
+      }
+      if (data) {
         setTickers(prev => [dbToWTicker(data), ...prev])
         fetchPrices([sym])
       }
@@ -357,8 +365,11 @@ export default function WatchlistPage() {
   }
 
   const handleDeleteList = async (id: string) => {
-    if (!confirm('Delete list? Tickers in this list will be unassigned.')) return
     const generalId = lists.find(l => l.name.toLowerCase() === 'general')?.id
+    const confirmMsg = generalId
+      ? 'Delete list? Tickers in this list will be unassigned.'
+      : 'Delete list? Tickers in this list will be unassigned (no "general" list found to reassign them to).'
+    if (!confirm(confirmMsg)) return
     if (generalId) {
       await supabase.from('watchlist').update({ list_id: generalId }).eq('list_id', id)
       setTickers(prev => prev.map(t => t.listId === id ? { ...t, listId: generalId } : t))
@@ -479,11 +490,18 @@ export default function WatchlistPage() {
             <textarea value={form.thesis} onChange={e => setForm(p => ({ ...p, thesis: e.target.value }))} rows={4} placeholder="Setup rationale, catalysts, key levels to watch…" className={`${inputCls} resize-none`} />
           </div>
         </div>
-        <div className="px-6 py-5 border-t border-default flex gap-3 flex-shrink-0">
-          <button onClick={handleSave} disabled={!form.symbol.trim()} className="flex-1 bg-gradient-to-r from-accent to-[#ff6655] text-white text-sm font-semibold py-2.5 rounded-lg disabled:opacity-40 hover:brightness-110 transition-all">
-            {editingId ? 'Update' : 'Add to Watchlist'}
-          </button>
-          <button onClick={closePanel} className="px-4 text-sm text-text-secondary border border-default rounded-lg hover:bg-surface2 transition-colors">Cancel</button>
+        <div className="px-6 py-5 border-t border-default flex gap-3 flex-shrink-0 flex-col">
+          {saveError && (
+            <div className="text-loss text-xs bg-loss/10 border border-loss/20 rounded-lg px-3 py-2">
+              {saveError}
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button onClick={handleSave} disabled={!form.symbol.trim() || symPreview === 'invalid'} className="flex-1 bg-gradient-to-r from-accent to-[#ff6655] text-white text-sm font-semibold py-2.5 rounded-lg disabled:opacity-40 hover:brightness-110 transition-all">
+              {editingId ? 'Update' : 'Add to Watchlist'}
+            </button>
+            <button onClick={closePanel} className="px-4 text-sm text-text-secondary border border-default rounded-lg hover:bg-surface2 transition-colors">Cancel</button>
+          </div>
         </div>
       </div>
 

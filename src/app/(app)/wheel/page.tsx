@@ -169,7 +169,7 @@ export default function WheelPage() {
 
     const [tradeRes, cycleRes, posRes] = await Promise.all([
       supabase.from('trades').update({
-        exit_price: 0, pnl, pnl_pct: 100, updated_at: new Date().toISOString(),
+        exit_price: 0, pnl, pnl_pct: parseFloat(((trade.entry_price / (trade.strike ?? trade.entry_price)) * 100).toFixed(2)), updated_at: new Date().toISOString(),
       }).eq('id', trade.id),
       supabase.from('wheel_cycles').update({
         shares_quantity: shares,
@@ -1392,6 +1392,16 @@ export default function WheelPage() {
           <div className="text-sm text-text-secondary">
             Mark this cycle as abandoned. All leg records are preserved in your Trade Log.
           </div>
+          {modal?.type === 'abandon' && (() => {
+            const abandonCycleData = cycleData.find(d => d.cycle.id === modal.cycleId)
+            const hasOpenLeg = abandonCycleData?.openLeg != null
+            if (!hasOpenLeg) return null
+            return (
+              <div className="text-xs bg-amber/10 border border-amber/30 text-amber rounded-lg px-3 py-2">
+                This cycle has an open leg in your Trade Log. It will remain open — you can close it manually in the Trade Log.
+              </div>
+            )
+          })()}
           {formError && (
             <div className="text-loss text-xs bg-loss/10 border border-loss/30 rounded-lg px-3 py-2">
               {formError}

@@ -50,7 +50,7 @@ export default function AdminFeedbackPage() {
       .maybeSingle()
       .then(({ data }) => {
         if (!data) {
-          router.replace('/dashboard')
+          setIsAdmin(false)
         } else {
           setIsAdmin(true)
         }
@@ -108,12 +108,17 @@ export default function AdminFeedbackPage() {
     resolved: tickets.filter(t => t.status === 'resolved').length,
   }), [tickets])
 
-  if (!user || isAdmin === null) {
+  if (isAdmin === null) {
     return (
       <div className="p-8 flex items-center justify-center h-64">
         <div className="text-accent text-xs tracking-widest uppercase animate-pulse">Checking access...</div>
       </div>
     )
+  }
+
+  if (!user || isAdmin === false) {
+    router.push('/dashboard')
+    return null
   }
 
   if (loading) {

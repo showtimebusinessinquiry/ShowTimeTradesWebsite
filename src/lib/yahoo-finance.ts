@@ -116,7 +116,7 @@ async function fetchFinnhubYTD(symbol: string): Promise<number | null> {
 }
 
 export async function fetchYahooYTD(symbol: string): Promise<number | null> {
-  return (await fetchFinnhubYTD(symbol)) ?? (await fetchYahooYTDInternal(symbol))
+  return (await fetchYahooYTDInternal(symbol)) ?? (await fetchFinnhubYTD(symbol))
 }
 
 // --- Finnhub fallback ---
@@ -149,5 +149,5 @@ async function fetchFinnhubQuote(symbol: string): Promise<StockQuote | null> {
 // --- Public entry point ---
 
 export async function fetchQuote(symbol: string): Promise<StockQuote | null> {
-  return (await fetchFinnhubQuote(symbol)) ?? (await fetchYahooQuote(symbol))
+  return (await fetchYahooQuote(symbol)) ?? (await fetchFinnhubQuote(symbol))
 }

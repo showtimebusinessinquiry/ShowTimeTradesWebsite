@@ -1,7 +1,13 @@
 import { NextRequest } from 'next/server'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
 import { fetchQuote } from '@/lib/yahoo-finance'
 
 export async function GET(req: NextRequest) {
+  const supabase = createRouteHandlerClient({ cookies })
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
   const symbolsParam = req.nextUrl.searchParams.get('symbols') ?? ''
   const symbols = symbolsParam
     .split(',')
@@ -9,6 +15,7 @@ export async function GET(req: NextRequest) {
     .filter(s => /^[A-Z0-9.^=\-]{1,10}$/.test(s))
 
   if (symbols.length === 0) return Response.json({ quotes: [] })
+  if (symbols.length > 20) return Response.json({ error: 'Too many symbols' }, { status: 400 })
 
   const results = await Promise.all(symbols.map(fetchQuote))
   const quotes = results

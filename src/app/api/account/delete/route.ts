@@ -15,7 +15,10 @@ export async function DELETE(req: NextRequest) {
   if (userErr || !user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { error } = await adminClient.auth.admin.deleteUser(user.id)
-  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[account/delete]', error)
+    return Response.json({ error: 'Failed to delete account. Please contact support.' }, { status: 500 })
+  }
 
   return Response.json({ success: true })
 }

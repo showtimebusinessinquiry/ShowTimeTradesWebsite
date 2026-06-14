@@ -90,7 +90,9 @@ interface TradeFormValues {
 
 function calcDTEFromExpiration(expiration: string): number {
   if (!expiration) return 0
-  const diff = new Date(expiration).getTime() - Date.now()
+  const [y, m, d] = expiration.split('-').map(Number)
+  const expDate = new Date(Date.UTC(y, m - 1, d, 21, 0, 0))
+  const diff = expDate.getTime() - Date.now()
   return Math.max(0, Math.ceil(diff / 86400000))
 }
 
@@ -144,6 +146,8 @@ export default function TradeLogPage() {
   const [exitEditForm, setExitEditForm] = useState({ exit_date: '', exit_price: '', quantity: '', notes: '' })
   const [exitEditError, setExitEditError] = useState<string | null>(null)
   const [exitEditSaving, setExitEditSaving] = useState(false)
+  const [filterTicker, setFilterTicker] = useState('')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'open' | 'closed'>('all')
 
   const notify = (msg: string, ok = true) => {
     setToast({ msg, ok })
@@ -270,6 +274,11 @@ export default function TradeLogPage() {
       return
     }
 
+    if (!form.date) {
+      setFormError('Date is required.')
+      return
+    }
+
     if (!form.ticker.trim()) {
       setFormError('Ticker is required.')
       return
@@ -387,7 +396,7 @@ export default function TradeLogPage() {
       notes: form.notes.trim() || null,
       mistake_tags: form.mistake_tags.length > 0 ? form.mistake_tags : null,
       group_id: resolvedGroupId,
-      close_date: form.exit_price ? new Date().toISOString().slice(0, 10) : null,
+      close_date: form.exit_price ? form.date : null,
     }
 
     if (editingTrade) {
@@ -426,6 +435,7 @@ export default function TradeLogPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this trade?')) return
+    await supabase.from('trade_exits').delete().eq('trade_id', id)
     const { error } = await supabase.from('trades').delete().eq('id', id)
     if (error) { notify(`Delete failed: ${error.message}`, false); return }
     await fetchAll()
@@ -569,6 +579,7 @@ export default function TradeLogPage() {
   }
 
   const handleExitDelete = async (ex: TradeExit, parent: Trade) => {
+    if (!confirm('Delete this partial exit?')) return
     const { error } = await supabase.from('trade_exits').delete().eq('id', ex.id)
     if (error) { notify(`Delete failed: ${error.message}`, false); return }
     const remainingExits = (exitsMap[parent.id] ?? []).filter(e => e.id !== ex.id)
@@ -589,7 +600,7 @@ export default function TradeLogPage() {
     }
   }
 
-  const sorted = [...trades].sort((a, b) => {
+  const sorted = useMemo(() => [...trades].sort((a, b) => {
     let va: string | number
     let vb: string | number
     if (sortKey === 'date') {
@@ -605,7 +616,7 @@ export default function TradeLogPage() {
     if (va < vb) return sortDir === 'asc' ? -1 : 1
     if (va > vb) return sortDir === 'asc' ? 1 : -1
     return 0
-  })
+  }), [trades, sortKey, sortDir])
 
   const strategyOptions = form.asset_type === 'option' ? OPTION_STRATEGIES : EQUITY_STRATEGIES
 
@@ -619,10 +630,10 @@ export default function TradeLogPage() {
 
   const isMultiLegMode = !editingTrade && isMultiLeg(form.strategy) && form.legs.length > 0
 
-  const tradesByGroup = trades.reduce<Record<string, Trade[]>>((acc, t) => {
+  const tradesByGroup = useMemo(() => trades.reduce<Record<string, Trade[]>>((acc, t) => {
     if (t.group_id) { (acc[t.group_id] ??= []).push(t) }
     return acc
-  }, {})
+  }, {}), [trades])
 
   const exitsMap = useMemo<Record<string, TradeExit[]>>(
     () => tradeExits.reduce((acc, e) => {
@@ -631,6 +642,13 @@ export default function TradeLogPage() {
     }, {} as Record<string, TradeExit[]>),
     [tradeExits],
   )
+
+  const filtered = useMemo(() => sorted.filter(t => {
+    if (filterTicker && !t.ticker.toLowerCase().includes(filterTicker.toLowerCase())) return false
+    if (filterStatus === 'open' && t.exit_price != null) return false
+    if (filterStatus === 'closed' && t.exit_price == null) return false
+    return true
+  }), [sorted, filterTicker, filterStatus])
 
   function getTradeStatus(trade: Trade, exits: TradeExit[]): 'Open' | 'Partial' | 'Closed' {
     if (exits.length === 0) return trade.exit_price != null ? 'Closed' : 'Open'
@@ -766,8 +784,8 @@ export default function TradeLogPage() {
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="bg-surface2 border-b border-default">
-                              {['Date', 'Ticker', 'Strategy', 'Open', 'Close', 'Qty', 'P&L', 'Status'].map(h => (
-                                <th key={h} className={`px-4 py-2.5 text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase ${h === 'Open' || h === 'Close' || h === 'Qty' || h === 'P&L' ? 'text-right' : h === 'Status' ? 'text-center' : 'text-left'}`}>{h}</th>
+                              {['Date', 'Ticker', 'Strategy', 'Entry', 'Exit', 'Qty', 'P&L', 'Status'].map(h => (
+                                <th key={h} className={`px-4 py-2.5 text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase ${h === 'Entry' || h === 'Exit' || h === 'Qty' || h === 'P&L' ? 'text-right' : h === 'Status' ? 'text-center' : 'text-left'}`}>{h}</th>
                               ))}
                             </tr>
                           </thead>
@@ -830,7 +848,27 @@ export default function TradeLogPage() {
           <div className="text-text-muted text-xs">Click &quot;Add Trade&quot; to get started.</div>
         </div>
       ) : (
-        <div className="border border-default rounded-xl overflow-hidden overflow-x-auto">
+        <>
+          {/* Filter bar */}
+          <div className="flex items-center gap-3 mb-3">
+            <input
+              type="text"
+              value={filterTicker}
+              onChange={e => setFilterTicker(e.target.value)}
+              placeholder="Filter by ticker…"
+              className="bg-bg border border-default rounded-lg px-3 py-1.5 text-xs text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors w-40"
+            />
+            <select
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value as 'all' | 'open' | 'closed')}
+              className="bg-bg border border-default rounded-lg px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent transition-colors"
+            >
+              <option value="all">All</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+          <div className="border border-default rounded-xl overflow-hidden overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-default bg-surface2">
@@ -847,8 +885,8 @@ export default function TradeLogPage() {
                   Ticker {sortKey === 'ticker' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
                 </th>
                 <th className="px-4 py-3 text-left text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">Strategy</th>
-                <th className="px-4 py-3 text-right text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">Open</th>
-                <th className="px-4 py-3 text-right text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">Close</th>
+                <th className="px-4 py-3 text-right text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">Entry</th>
+                <th className="px-4 py-3 text-right text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">Exit</th>
                 <th className="px-4 py-3 text-right text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">Qty</th>
                 <th
                   className={`px-4 py-3 text-right text-[10px] font-semibold tracking-[0.14em] uppercase cursor-pointer hover:text-text-primary select-none ${sortKey === 'pnl' ? 'text-accent' : 'text-text-muted'}`}
@@ -863,7 +901,7 @@ export default function TradeLogPage() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((trade, i) => {
+              {filtered.map((trade, i) => {
                 const exits = exitsMap[trade.id] ?? []
                 const status = getTradeStatus(trade, exits)
                 const effectivePnl = getEffectivePnl(trade, exits) ?? 0
@@ -1082,6 +1120,7 @@ export default function TradeLogPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* Trim Modal */}
@@ -1383,11 +1422,11 @@ export default function TradeLogPage() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className={labelClass}>Open</label>
+                          <label className={labelClass}>Entry</label>
                           <input type="number" step="0.01" value={leg.entry_price} onChange={e => updateLeg(i, 'entry_price', e.target.value)} placeholder="0.00" required className={inputClass} />
                         </div>
                         <div>
-                          <label className={labelClass}>Close</label>
+                          <label className={labelClass}>Exit</label>
                           <input type="number" step="0.01" value={leg.exit_price} onChange={e => updateLeg(i, 'exit_price', e.target.value)} placeholder="0.00" className={inputClass} />
                         </div>
                       </div>
@@ -1402,7 +1441,7 @@ export default function TradeLogPage() {
           {!isMultiLegMode && (
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className={labelClass}>Open</label>
+                <label className={labelClass}>Entry</label>
                 <input
                   type="number"
                   step="0.01"
@@ -1414,7 +1453,7 @@ export default function TradeLogPage() {
                 />
               </div>
               <div>
-                <label className={labelClass}>Close</label>
+                <label className={labelClass}>Exit</label>
                 <input
                   type="number"
                   step="0.01"

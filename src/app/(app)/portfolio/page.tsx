@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import type { PortfolioPosition, InsertPortfolioPosition, UpdatePortfolioPosition, AssetType, Trade, InsertTrade } from '@/types/database'
@@ -87,11 +87,15 @@ export default function PortfolioPage() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [snapshots, setSnapshots] = useState<Array<{ snapshot_date: string; total_market_value: number | null; total_cost_basis: number | null; unrealized_pnl: number | null; position_count: number | null }>>([])
   const [showHistory, setShowHistory] = useState(false)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const notify = (msg: string, ok = true) => {
     setToast({ msg, ok })
-    setTimeout(() => setToast(null), 3000)
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(null), 3000)
   }
+
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current) }, [])
 
   const loadSnapshots = async () => {
     if (!user) return
@@ -450,7 +454,7 @@ export default function PortfolioPage() {
           label="Realized P&L"
           value={`${totalRealizedPnl >= 0 ? '+' : ''}$${totalRealizedPnl.toFixed(2)}`}
           variant={totalRealizedPnl >= 0 ? 'gain' : totalRealizedPnl < 0 ? 'loss' : 'default'}
-          sub="all closed trades"
+          sub="All closed trades"
         />
       </div>
 

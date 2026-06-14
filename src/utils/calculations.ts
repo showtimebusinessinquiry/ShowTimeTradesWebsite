@@ -151,10 +151,16 @@ export function calcRemainingQty(totalQty: number, exits: { quantity: number }[]
   return totalQty - exits.reduce((s, e) => s + e.quantity, 0)
 }
 
-/** Average ROC across options trades: entry_price / strike * 100 (%) */
+/** Average ROC across options trades: return-on-collateral = entry_price / (strike - entry_price) * 100 (%) */
 export function calcAvgROC(trades: TradeForROC[]): number {
   const opts = trades.filter(t => t.asset_type === 'option' && t.strike !== null && t.strike > 0)
   if (opts.length === 0) return 0
-  const sum = opts.reduce((acc, t) => acc + (t.entry_price / t.strike!), 0)
+  const sum = opts.reduce((acc, t) => acc + (t.entry_price / (t.strike! - t.entry_price)), 0)
   return (sum / opts.length) * 100
+}
+
+export function calcDTEFromExpiration(dateStr: string): number {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const expiry = new Date(Date.UTC(y, m - 1, d, 21, 0, 0))
+  return Math.max(0, Math.ceil((expiry.getTime() - Date.now()) / 86_400_000))
 }

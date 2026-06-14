@@ -1,4 +1,6 @@
 import { NextRequest } from 'next/server'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -6,6 +8,10 @@ const HEADERS = {
 }
 
 export async function GET(req: NextRequest) {
+  const supabase = createRouteHandlerClient({ cookies })
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { searchParams } = req.nextUrl
   const ticker = searchParams.get('ticker')?.toUpperCase()
   const expiration = searchParams.get('expiration') // YYYY-MM-DD
@@ -13,8 +19,12 @@ export async function GET(req: NextRequest) {
   const type = searchParams.get('type') // 'put' for CSP, 'call' for CC
 
   if (!ticker) return Response.json({ error: 'ticker required' }, { status: 400 })
+  if (!/^[A-Z0-9.^=\-]{1,10}$/.test(ticker)) return Response.json({ error: 'Invalid symbol' }, { status: 400 })
   if (type !== null && type !== 'call' && type !== 'put') {
     return Response.json({ error: "type must be 'call' or 'put'" }, { status: 400 })
+  }
+  if (expiration !== null && !/^\d{4}-\d{2}-\d{2}$/.test(expiration)) {
+    return Response.json({ error: 'Invalid expiration format' }, { status: 400 })
   }
 
   // Convert YYYY-MM-DD to epoch seconds for Yahoo Finance options endpoint.

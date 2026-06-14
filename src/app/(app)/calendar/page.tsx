@@ -7,6 +7,11 @@ import type { Trade } from '@/types/database'
 import { STRATEGY_LABELS } from '@/types/database'
 import { PageHeader } from '@/components/ui/PageHeader'
 
+interface TradeExit {
+  trade_id: string
+  pnl: number | null
+}
+
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -20,6 +25,7 @@ function fmtPnl(n: number) {
 export default function CalendarPage() {
   const { user } = useAuth()
   const [trades, setTrades] = useState<Trade[]>([])
+  const [tradeExits, setTradeExits] = useState<TradeExit[]>([])
   const [loading, setLoading] = useState(true)
   const [currentMonth, setCurrentMonth] = useState(() => {
     const d = new Date()
@@ -31,16 +37,42 @@ export default function CalendarPage() {
 
   useEffect(() => {
     if (!user) { setLoading(false); return }
-    supabase
-      .from('trades')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('date', { ascending: false })
-      .then(({ data }) => {
-        setTrades(data ?? [])
-        setLoading(false)
-      })
+    Promise.all([
+      supabase
+        .from('trades')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false }),
+      supabase
+        .from('trade_exits')
+        .select('trade_id, pnl')
+        .eq('user_id', user.id),
+    ]).then(([tradesRes, exitsRes]) => {
+      setTrades(tradesRes.data ?? [])
+      setTradeExits((exitsRes.data ?? []) as TradeExit[])
+      setLoading(false)
+    })
   }, [user])
+
+  // Build a map of trade_id → sum of exit pnl for partial-exit trades
+  const exitPnlByTradeId = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const e of tradeExits) {
+      if (e.pnl == null) continue
+      map[e.trade_id] = (map[e.trade_id] ?? 0) + e.pnl
+    }
+    return map
+  }, [tradeExits])
+
+  // Effective P&L: use trade.pnl if set, else sum of exits, else null
+  function getEffectivePnl(t: Trade, exitMap: Record<string, number>): number | null {
+    if (t.pnl != null) return t.pnl
+    if (exitMap[t.id] != null) return exitMap[t.id]
+    return null
+  }
+
+  // Keep a stable per-render helper for use in render logic below
+  const effectivePnl = (t: Trade) => getEffectivePnl(t, exitPnlByTradeId)
 
   const filteredTrades = useMemo(() => trades.filter(t =>
     (!filterTicker || t.ticker.includes(filterTicker.toUpperCase())) &&
@@ -57,21 +89,23 @@ export default function CalendarPage() {
   }, [filteredTrades])
 
   const pnlByDate = useMemo(() => {
-    const map: Record<string, number> = {}
+    const map: Record<string, number | null> = {}
     for (const [date, dayTrades] of Object.entries(tradesByDate)) {
-      map[date] = dayTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0)
+      const pnls = dayTrades.map(t => getEffectivePnl(t, exitPnlByTradeId))
+      const anyRealized = pnls.some(p => p != null)
+      map[date] = anyRealized ? pnls.reduce((sum, p) => sum + (p ?? 0), 0) : null
     }
     return map
-  }, [tradesByDate])
+  }, [tradesByDate, exitPnlByTradeId])
 
   const winRateByDate = useMemo(() => {
     const map: Record<string, number | null> = {}
     for (const [date, dayTrades] of Object.entries(tradesByDate)) {
-      const closed = dayTrades.filter(t => t.pnl != null)
-      map[date] = closed.length === 0 ? null : (closed.filter(t => (t.pnl ?? 0) > 0).length / closed.length) * 100
+      const closed = dayTrades.filter(t => getEffectivePnl(t, exitPnlByTradeId) != null)
+      map[date] = closed.length === 0 ? null : (closed.filter(t => (getEffectivePnl(t, exitPnlByTradeId) ?? 0) > 0).length / closed.length) * 100
     }
     return map
-  }, [tradesByDate])
+  }, [tradesByDate, exitPnlByTradeId])
 
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth()
@@ -83,7 +117,7 @@ export default function CalendarPage() {
     const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`
     return Object.entries(pnlByDate)
       .filter(([date]) => date.startsWith(prefix))
-      .reduce((sum, [, pnl]) => sum + pnl, 0)
+      .reduce((sum, [, pnl]) => sum + (pnl ?? 0), 0)
   }, [pnlByDate, year, month])
 
   const monthlyTradeCount = useMemo(() => {
@@ -206,17 +240,18 @@ export default function CalendarPage() {
                 ? `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
                 : null
               const dayTrades = dateStr ? (tradesByDate[dateStr] ?? []) : []
-              const pnl = dateStr ? (pnlByDate[dateStr] ?? 0) : 0
+              const pnl = dateStr ? (pnlByDate[dateStr] ?? null) : null
               const winRate = dateStr ? (winRateByDate[dateStr] ?? null) : null
-              return { i, di, dayNum, isInMonth, dateStr, dayTrades, pnl, winRate }
+              const allOpen = dayTrades.length > 0 && pnl == null
+              return { i, di, dayNum, isInMonth, dateStr, dayTrades, pnl, winRate, allOpen }
             })
 
-            const weekPnl = weekDays.reduce((sum, d) => d.isInMonth && d.dayTrades.length > 0 ? sum + d.pnl : sum, 0)
+            const weekPnl = weekDays.reduce((sum, d) => d.isInMonth && d.dayTrades.length > 0 ? sum + (d.pnl ?? 0) : sum, 0)
             const hasWeekActivity = weekDays.some(d => d.isInMonth && d.dayTrades.length > 0)
 
             return (
               <div key={wi} className="grid grid-cols-[repeat(7,1fr)_84px]">
-                {weekDays.map(({ i, di, dayNum, isInMonth, dateStr, dayTrades, pnl, winRate }) => {
+                {weekDays.map(({ i, di, dayNum, isInMonth, dateStr, dayTrades, pnl, winRate, allOpen }) => {
                   const hasActivity = dayTrades.length > 0
                   const isSelected = dateStr === selectedDate
                   const isToday = dateStr === today
@@ -230,15 +265,17 @@ export default function CalendarPage() {
                       }}
                       className={[
                         'min-h-[88px] p-2 border-b border-r relative transition-colors',
-                        hasActivity && !isSelected && pnl > 0 ? 'border-gain/30 bg-gain/10' :
-                        hasActivity && !isSelected && pnl < 0 ? 'border-loss/30 bg-loss/10' :
+                        hasActivity && !isSelected && !allOpen && (pnl ?? 0) > 0 ? 'border-gain/30 bg-gain/10' :
+                        hasActivity && !isSelected && !allOpen && (pnl ?? 0) < 0 ? 'border-loss/30 bg-loss/10' :
+                        hasActivity && !isSelected && allOpen ? 'border-blue-400/30 bg-blue-400/5' :
                         'border-default/20',
                         !isInMonth ? 'bg-bg' : '',
                         isWeekend && isInMonth && !hasActivity && !isSelected ? 'bg-surface2/40' : '',
                         isSelected ? 'bg-accent/8 ring-1 ring-inset ring-accent/30 border-accent/20' : '',
                         isInMonth ? 'cursor-pointer' : '',
-                        hasActivity && !isSelected && pnl > 0 ? 'hover:bg-gain/15' : '',
-                        hasActivity && !isSelected && pnl < 0 ? 'hover:bg-loss/15' : '',
+                        hasActivity && !isSelected && !allOpen && (pnl ?? 0) > 0 ? 'hover:bg-gain/15' : '',
+                        hasActivity && !isSelected && !allOpen && (pnl ?? 0) < 0 ? 'hover:bg-loss/15' : '',
+                        hasActivity && !isSelected && allOpen ? 'hover:bg-blue-400/10' : '',
                         !hasActivity && isInMonth && !isSelected ? 'hover:bg-surface/40' : '',
                       ].filter(Boolean).join(' ')}
                     >
@@ -252,9 +289,15 @@ export default function CalendarPage() {
                           </div>
                           {hasActivity && (
                             <>
-                              <div className={`text-xs font-mono font-bold leading-tight text-center ${pnl >= 0 ? 'text-gain' : 'text-loss'}`}>
-                                {fmtPnl(pnl)}
-                              </div>
+                              {allOpen ? (
+                                <div className="text-[10px] font-bold leading-tight text-center text-blue-400 uppercase tracking-wide">
+                                  OPEN
+                                </div>
+                              ) : (
+                                <div className={`text-xs font-mono font-bold leading-tight text-center ${(pnl ?? 0) >= 0 ? 'text-gain' : 'text-loss'}`}>
+                                  {fmtPnl(pnl ?? 0)}
+                                </div>
+                              )}
                               <div className="text-[11px] text-text-muted mt-0.5 text-center">
                                 {dayTrades.length}t
                                 {winRate != null ? ` · ${Math.round(winRate)}%W` : ''}
@@ -295,15 +338,17 @@ export default function CalendarPage() {
                 weekday: 'long', month: 'long', day: 'numeric',
               })}
             </span>
-            <span className={`font-mono text-sm font-bold ${(pnlByDate[selectedDate] ?? 0) >= 0 ? 'text-gain' : 'text-loss'}`}>
-              {fmtPnl(pnlByDate[selectedDate] ?? 0)}
+            <span className={`font-mono text-sm font-bold ${(pnlByDate[selectedDate] ?? null) == null ? 'text-blue-400' : (pnlByDate[selectedDate] ?? 0) >= 0 ? 'text-gain' : 'text-loss'}`}>
+              {pnlByDate[selectedDate] != null ? fmtPnl(pnlByDate[selectedDate] as number) : 'OPEN'}
             </span>
           </div>
           {selectedTrades.length === 0 ? (
             <div className="px-5 py-6 text-center text-xs text-text-muted">No trades match the current filters for this day.</div>
           ) : (
             <div className="divide-y divide-default/30">
-              {selectedTrades.map(t => (
+              {selectedTrades.map(t => {
+                const ePnl = effectivePnl(t)
+                return (
                 <div key={t.id} className="px-5 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="font-mono font-bold text-sm text-text-primary">{t.ticker}</span>
@@ -319,12 +364,13 @@ export default function CalendarPage() {
                       {t.quantity}× @${t.entry_price}
                       {t.exit_price ? ` → $${t.exit_price}` : ''}
                     </span>
-                    <span className={`font-mono font-semibold min-w-[60px] text-right ${(t.pnl ?? 0) >= 0 ? 'text-gain' : t.pnl != null ? 'text-loss' : 'text-text-muted'}`}>
-                      {t.pnl != null ? fmtPnl(t.pnl) : 'Open'}
+                    <span className={`font-mono font-semibold min-w-[60px] text-right ${ePnl != null && ePnl >= 0 ? 'text-gain' : ePnl != null ? 'text-loss' : 'text-blue-400'}`}>
+                      {ePnl != null ? fmtPnl(ePnl) : 'Open'}
                     </span>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
