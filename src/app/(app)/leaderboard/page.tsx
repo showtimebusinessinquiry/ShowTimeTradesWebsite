@@ -120,7 +120,7 @@ export default function LeaderboardPage() {
       )
 
       setTrades(
-        (tradesData ?? [])
+        ((tradesData ?? []) as unknown as PublicTrade[])
           .map(t => ({ ...t, username: userMap[t.user_id] ?? 'unknown' }))
       )
       setLoading(false)
