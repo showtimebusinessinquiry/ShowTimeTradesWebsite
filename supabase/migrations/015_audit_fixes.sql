@@ -119,16 +119,16 @@ ALTER TABLE public.profiles
 --    This is overly broad: it exposes notes, entry_price, quantity, and other
 --    sensitive columns for all users to all users.
 --
---    Replace it with a view that:
---      - only surfaces the columns needed for leaderboard display
---      - only includes rows for users who have opted in via show_on_leaderboard
+--    Replace it with a view that surfaces only the columns needed for leaderboard
+--    display (no notes, entry_price, quantity, strike, delta, etc.) for ALL users.
+--    The show_on_leaderboard flag controls UI behaviour only — all users always
+--    appear in rankings with aggregate stats; the flag determines whether other
+--    users can browse their individual trade entries via the profile panel.
 -- ─────────────────────────────────────────────────────────────────────────────
 DROP POLICY IF EXISTS "leaderboard_read_trades" ON public.trades;
 
 CREATE OR REPLACE VIEW public.leaderboard_trades AS
   SELECT t.id, t.user_id, t.date, t.ticker, t.strategy, t.pnl
-  FROM public.trades t
-  JOIN public.profiles p ON p.user_id = t.user_id
-  WHERE p.show_on_leaderboard = true;
+  FROM public.trades t;
 
 GRANT SELECT ON public.leaderboard_trades TO authenticated;

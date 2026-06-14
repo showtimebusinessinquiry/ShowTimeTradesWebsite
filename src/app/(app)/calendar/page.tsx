@@ -93,7 +93,7 @@ export default function CalendarPage() {
     for (const [date, dayTrades] of Object.entries(tradesByDate)) {
       const pnls = dayTrades.map(t => getEffectivePnl(t, exitPnlByTradeId))
       const anyRealized = pnls.some(p => p != null)
-      map[date] = anyRealized ? pnls.reduce((sum, p) => sum + (p ?? 0), 0) : null
+      map[date] = anyRealized ? pnls.reduce((sum: number, p) => sum + (p ?? 0), 0) : null
     }
     return map
   }, [tradesByDate, exitPnlByTradeId])

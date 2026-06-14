@@ -97,7 +97,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="bg-surface border border-default rounded-xl p-6">
-          <h2 className="font-display font-semibold text-base text-text-primary mb-1 tracking-tight">Leaderboard</h2>
+          <h2 className="font-display font-semibold text-base text-text-primary mb-1 tracking-tight">Trade Log Privacy</h2>
           <p className="text-text-muted text-xs leading-relaxed mb-4">
             Control your visibility on the community leaderboard.
           </p>
@@ -109,8 +109,8 @@ export default function SettingsPage() {
               className="mt-0.5 rounded accent-accent cursor-pointer"
             />
             <div>
-              <span className="text-sm font-semibold text-text-primary block">Show my trades on the leaderboard</span>
-              <span className="text-xs text-text-muted">When enabled, your trades are visible to other users on the leaderboard.</span>
+              <span className="text-sm font-semibold text-text-primary block">Allow others to view my trade log</span>
+              <span className="text-xs text-text-muted">When enabled, other users can click your name on the leaderboard to browse your individual trade entries.</span>
             </div>
           </label>
         </div>

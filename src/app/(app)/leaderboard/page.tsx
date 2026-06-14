@@ -83,12 +83,14 @@ export default function LeaderboardPage() {
   const [filterTicker, setFilterTicker] = useState('all')
   const [filterStrategy, setFilterStrategy] = useState('all')
   const [activeTab, setActiveTab] = useState<'rankings' | 'chart'>('rankings')
+  const [profileMap, setProfileMap] = useState<Record<string, { user_id: string; show_on_leaderboard: boolean }>>({})
+  const [selectedUsername, setSelectedUsername] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
       const [{ data: profiles, error: pErr }, { data: tradesData, error: tErr }] = await Promise.all([
         supabase.from('profiles').select('user_id, username, show_on_leaderboard'),
-        supabase.from('trades').select('id, user_id, date, ticker, strategy, pnl').order('date', { ascending: false }).limit(1000),
+        supabase.from('leaderboard_trades').select('id, user_id, date, ticker, strategy, pnl').order('date', { ascending: false }).limit(1000),
       ])
 
       if (pErr || tErr) {
@@ -101,22 +103,22 @@ export default function LeaderboardPage() {
         return
       }
 
-      // Option B: filter to only users who have opted in (show_on_leaderboard === true)
-      // Swap to leaderboard_trades view (Option A) once migration 015 is applied
-      const optedInUserIds = new Set(
-        (profiles ?? [])
-          .filter((p: { show_on_leaderboard?: boolean }) => p.show_on_leaderboard === true)
-          .map((p: { user_id: string }) => p.user_id)
-      )
-
       const userMap: Record<string, string> = {}
       for (const p of (profiles ?? []) as Profile[]) {
         userMap[p.user_id] = p.username
       }
 
+      setProfileMap(
+        Object.fromEntries(
+          (profiles ?? []).map((p: { user_id: string; username: string; show_on_leaderboard?: boolean }) => [
+            p.username,
+            { user_id: p.user_id, show_on_leaderboard: p.show_on_leaderboard ?? false },
+          ])
+        )
+      )
+
       setTrades(
         (tradesData ?? [])
-          .filter(t => optedInUserIds.has(t.user_id))
           .map(t => ({ ...t, username: userMap[t.user_id] ?? 'unknown' }))
       )
       setLoading(false)
@@ -266,7 +268,14 @@ USING (true);`}</pre>
                   {u.closedTrades > 0 ? Math.round(u.wins / u.closedTrades * 100) : 0}% win rate
                 </span>
               </div>
-              <div className="font-semibold text-sm text-text-primary mb-1">@{u.username}</div>
+              <div className="font-semibold text-sm text-text-primary mb-1">
+                <button
+                  onClick={() => setSelectedUsername(u.username)}
+                  className="hover:underline hover:text-text-primary transition-colors cursor-pointer"
+                >
+                  @{u.username}
+                </button>
+              </div>
               <div className={`font-mono font-bold text-xl ${u.pnl >= 0 ? 'text-gain' : 'text-loss'}`}>
                 {fmtPnl(u.pnl)}
               </div>
@@ -312,7 +321,14 @@ USING (true);`}</pre>
               {userStats.map((u, i) => (
                 <tr key={u.username} className="hover:bg-surface2/40 transition-colors">
                   <td className="px-4 py-2.5 font-mono text-text-muted">#{i + 1}</td>
-                  <td className="px-4 py-2.5 font-semibold text-text-primary">@{u.username}</td>
+                  <td className="px-4 py-2.5 font-semibold text-text-primary">
+                    <button
+                      onClick={() => setSelectedUsername(u.username)}
+                      className="hover:underline hover:text-text-primary transition-colors cursor-pointer"
+                    >
+                      @{u.username}
+                    </button>
+                  </td>
                   <td className="px-4 py-2.5 text-right font-mono text-text-muted">{u.trades}</td>
                   <td className="px-4 py-2.5 text-right font-mono text-text-muted">
                     {u.closedTrades > 0 ? `${Math.round(u.wins / u.closedTrades * 100)}%` : '—'}
@@ -395,7 +411,14 @@ USING (true);`}</pre>
               </tr>
             ) : filtered.map(t => (
               <tr key={t.id} className="hover:bg-surface2/40 transition-colors">
-                <td className="px-4 py-3 font-mono text-xs text-text-secondary">@{t.username}</td>
+                <td className="px-4 py-3 font-mono text-xs text-text-secondary">
+                  <button
+                    onClick={() => setSelectedUsername(t.username)}
+                    className="hover:underline hover:text-text-primary transition-colors cursor-pointer"
+                  >
+                    @{t.username}
+                  </button>
+                </td>
                 <td className="px-4 py-3 font-mono font-bold text-text-primary text-xs">{t.ticker}</td>
                 <td className="px-4 py-3">
                   <span className="font-mono text-[10px] text-text-muted border border-default/40 rounded px-1.5 py-0.5 uppercase tracking-wide">
@@ -455,6 +478,93 @@ USING (true);`}</pre>
             </ResponsiveContainer>
           )}
         </div>
+      )}
+
+      {/* Profile panel backdrop */}
+      {selectedUsername && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 z-40"
+            onClick={() => setSelectedUsername(null)}
+          />
+          <div className="fixed inset-y-0 right-0 w-96 bg-surface border-l border-default z-50 flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-default">
+              <span className="font-display font-semibold text-text-primary">@{selectedUsername}</span>
+              <button
+                onClick={() => setSelectedUsername(null)}
+                className="text-text-muted hover:text-text-primary text-xl leading-none"
+                aria-label="Close"
+              >×</button>
+            </div>
+
+            {/* Stats row */}
+            {(() => {
+              const stats = userStats.find(u => u.username === selectedUsername)
+              const isPublic = profileMap[selectedUsername]?.show_on_leaderboard ?? false
+              const userTrades = trades.filter(t => t.username === selectedUsername && t.pnl != null)
+              if (!stats) return null
+              return (
+                <div className="flex-1 overflow-y-auto">
+                  {/* Stat chips */}
+                  <div className="grid grid-cols-2 gap-3 px-6 py-4 border-b border-default">
+                    <div>
+                      <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Total P&L</div>
+                      <div className={`font-mono text-sm font-semibold ${stats.pnl >= 0 ? 'text-gain' : 'text-loss'}`}>
+                        {stats.pnl >= 0 ? '+' : ''}{stats.pnl.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Win Rate</div>
+                      <div className="font-mono text-sm font-semibold text-text-primary">
+                        {stats.closedTrades > 0 ? `${(stats.wins / stats.closedTrades * 100).toFixed(1)}%` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Closed Trades</div>
+                      <div className="font-mono text-sm font-semibold text-text-primary">{stats.closedTrades}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Edge Score</div>
+                      <div className="font-mono text-sm font-semibold text-text-primary">
+                        {stats.edgeScore != null ? stats.edgeScore.toFixed(1) : '—'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Trade list or private message */}
+                  {isPublic ? (
+                    <div className="px-6 py-4">
+                      <div className="text-[10px] text-text-muted uppercase tracking-wide mb-3">Trade Log</div>
+                      {userTrades.length === 0 ? (
+                        <p className="text-xs text-text-muted">No closed trades.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {userTrades.map(t => (
+                            <div key={t.id} className="flex items-center justify-between py-1.5 border-b border-default/40 last:border-0">
+                              <div>
+                                <span className="font-mono text-xs font-bold text-text-primary">{t.ticker}</span>
+                                <span className="font-mono text-[10px] text-text-muted ml-2">{t.date}</span>
+                              </div>
+                              <span className={`font-mono text-xs font-semibold ${(t.pnl ?? 0) >= 0 ? 'text-gain' : 'text-loss'}`}>
+                                {(t.pnl ?? 0) >= 0 ? '+' : ''}{(t.pnl ?? 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="px-6 py-8 text-center">
+                      <div className="text-text-muted text-sm">🔒</div>
+                      <p className="text-sm text-text-muted mt-2">This trader keeps their trades private.</p>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+        </>
       )}
     </div>
   )
