@@ -172,10 +172,10 @@ export default function DashboardPage() {
   const avgROC = useMemo(() => calcAvgROC(filtered), [filtered])
   const openPnl = useMemo(
     () => positions.reduce((sum, p) => {
-      const price = p.asset_type === 'option'
-        ? (p.current_price ?? p.entry_price)
-        : (livePrices[p.ticker] ?? p.current_price ?? p.entry_price)
-      return sum + calcUnrealizedPnl(p.entry_price, price, p.quantity)
+      const cur = p.ticker === 'CASH' ? 1
+        : p.asset_type === 'option' ? (p.current_price ?? p.entry_price)
+        : (livePrices[p.ticker] ?? p.entry_price)
+      return sum + calcUnrealizedPnl(p.entry_price, cur, p.quantity)
     }, 0),
     [positions, livePrices]
   )
