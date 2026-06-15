@@ -1,12 +1,6 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
 import { fetchQuote } from '@/lib/yahoo-finance'
 
 export async function GET(req: Request) {
-  const supabase = createRouteHandlerClient({ cookies })
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-
   const { searchParams } = new URL(req.url)
   const symbolsParam = searchParams.get('symbols') ?? ''
   const symbols = symbolsParam

@@ -1,5 +1,3 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
 import { fetchQuote } from '@/lib/yahoo-finance'
 
 const SYMBOLS = [
@@ -9,19 +7,13 @@ const SYMBOLS = [
   'XOM', 'UNH', 'LLY', 'AVGO', 'MA',
 ]
 
-// Yahoo Finance uses different symbols for some tickers
 const YAHOO_SYMBOL: Record<string, string> = {
   VIX: '^VIX',
 }
 
-// Module-level in-memory cache with 60-second TTL
 let _cache: { body: { tickers: { symbol: string; price: string; change: string }[] }; ts: number } | null = null
 
 export async function GET() {
-  const supabase = createRouteHandlerClient({ cookies })
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-
   if (_cache && Date.now() - _cache.ts < 60_000) {
     return Response.json(_cache.body)
   }
