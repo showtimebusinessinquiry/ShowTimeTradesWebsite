@@ -83,7 +83,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5 font-display font-extrabold text-sm tracking-widest uppercase">
             <Image src="/logo.png" alt="ShowTime Trades" width={36} height={36} className="mix-blend-screen" />
-            Show<span className="text-accent">Time</span>
+            <span>Show<span className="text-accent">Time</span></span>
             <span className="text-text-muted font-mono font-normal text-[10px] tracking-[0.2em] normal-case">Trades</span>
           </div>
           <div className="flex items-center gap-2">
@@ -137,7 +137,7 @@ export default function LandingPage() {
               </h1>
 
               <p className="text-base text-text-secondary leading-relaxed mb-4 max-w-lg">
-                ShowTime Trades is a free journal built specifically for Wheel strategy traders. Log every CSP, assignment, and covered call — then join <span className="text-text-primary font-medium">Premier</span> to follow ShowTime&apos;s live setups and trade alongside a serious community.
+                ShowTime Trades is a free journal built specifically for Wheel strategy traders. Log every CSP, assignment, and covered call — then join{' '}<span className="text-text-primary font-medium">Premier</span>{' '}to follow ShowTime&apos;s live setups and trade alongside a serious community.
               </p>
 
               {/* CTA row */}
@@ -418,7 +418,7 @@ export default function LandingPage() {
           <div className="font-mono text-[10px] tracking-[0.22em] text-text-muted uppercase mb-4">Get started</div>
           <h2 className="font-display font-extrabold text-2xl mb-3 tracking-tight">Ready to run the Wheel with discipline?</h2>
           <p className="text-text-secondary mb-8 max-w-sm mx-auto text-sm leading-relaxed">
-            Free journal. No credit card. Log your first trade today.
+            Free journal. Log your first trade today.
           </p>
           <div className="flex flex-wrap gap-3 justify-center">
             <Link href="/signup" className="inline-flex items-center gap-2 bg-gradient-to-r from-[#ff4444] to-[#ff7066] text-bg px-7 py-3 rounded-xl font-semibold tracking-wide text-sm btn-glow transition-all hover:brightness-110">
