@@ -356,10 +356,7 @@ export default function LandingPage() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-border/20 rounded-2xl overflow-hidden border border-default/40">
             {STEPS.map(({ n, title, desc }) => (
               <div key={n} className="bg-bg p-7 relative group hover:bg-surface/40 transition-colors">
-                <div className="font-mono text-[4rem] font-bold leading-none mb-5 tracking-tight"
-                  style={{ color: 'rgba(255,51,51,0.15)', transition: 'color 0.2s' }}
-                  onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,51,51,0.35)' )}
-                  onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,51,51,0.15)' )}
+                <div className="font-mono text-[4rem] font-bold leading-none mb-5 tracking-tight transition-colors duration-200 text-accent/20 group-hover:text-accent/40"
                 >
                   {n}
                 </div>
