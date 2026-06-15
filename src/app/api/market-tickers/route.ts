@@ -18,8 +18,7 @@ const YAHOO_SYMBOL: Record<string, string> = {
 let _cache: { body: { tickers: { symbol: string; price: string; change: string }[] }; ts: number } | null = null
 
 export async function GET() {
-  const cookieStore = await cookies()
-  const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+  const supabase = createRouteHandlerClient({ cookies })
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
