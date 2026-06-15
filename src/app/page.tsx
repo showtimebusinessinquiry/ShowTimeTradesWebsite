@@ -121,7 +121,7 @@ export default function LandingPage() {
             <div>
               <div className="inline-flex items-center gap-2 font-mono text-[10px] tracking-[0.22em] text-text-muted uppercase mb-7 border border-default/60 rounded-full px-3.5 py-1.5 bg-surface/60 backdrop-blur-sm">
                 <span className="w-1.5 h-1.5 rounded-full bg-gain animate-pulse-glow" />
-                Free to use · No credit card
+                Free to use
               </div>
 
               <h1 className="font-display font-extrabold leading-[1.0] tracking-tight mb-6" style={{ fontSize: 'clamp(2.6rem, 6vw, 4rem)' }}>
@@ -243,7 +243,7 @@ export default function LandingPage() {
 
         <div className="grid md:grid-cols-2 gap-5">
           {/* Free tier */}
-          <div className="rounded-2xl border border-default/60 bg-surface p-8 relative overflow-hidden">
+          <div className="rounded-2xl border border-default/60 bg-surface p-8 relative overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:border-text-muted/30 hover:shadow-[0_0_40px_rgba(220,228,242,0.06),0_16px_40px_rgba(0,0,0,0.5)]">
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-border/80 via-border/20 to-transparent" />
             <div className="font-mono text-[10px] tracking-[0.2em] text-text-muted uppercase mb-1">Free forever</div>
             <h3 className="font-display font-bold text-2xl mb-4">The App</h3>
@@ -267,11 +267,10 @@ export default function LandingPage() {
           </div>
 
           {/* Premier tier */}
-          <div className="rounded-2xl border overflow-hidden relative"
+          <div className="rounded-2xl border overflow-hidden relative transition-all duration-300 hover:-translate-y-1 shadow-[0_0_40px_rgba(255,215,0,0.08),0_0_80px_rgba(255,215,0,0.03)] hover:shadow-[0_0_60px_rgba(255,215,0,0.22),0_16px_40px_rgba(0,0,0,0.5)]"
             style={{
               borderColor: 'rgba(255,215,0,0.3)',
               background: 'linear-gradient(160deg, #0d1120 0%, #0f1318 100%)',
-              boxShadow: '0 0 40px rgba(255,215,0,0.08), 0 0 80px rgba(255,215,0,0.03)',
             }}>
             <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,215,0,0.6), rgba(255,215,0,0.3), transparent)' }} />
             <div className="p-8">
