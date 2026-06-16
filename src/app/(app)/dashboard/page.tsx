@@ -376,8 +376,8 @@ export default function DashboardPage() {
                 onClick={() => setRange(r)}
                 className={`text-sm font-semibold px-5 py-2 rounded-full border transition-all ${
                   range === r
-                    ? 'border-accent text-accent bg-accent/15 btn-glow'
-                    : 'border-default text-text-secondary hover:text-text-primary hover:border-border btn-glow-subtle'
+                    ? 'border-accent text-white bg-accent shadow-[0_0_14px_rgba(255,51,51,0.5)]'
+                    : 'border-default text-text-secondary hover:text-text-primary hover:border-border hover:-translate-y-px btn-glow-subtle'
                 }`}
               >
                 {r}
@@ -404,43 +404,51 @@ export default function DashboardPage() {
 
       {/* Primary metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-3">
-        <MetricCard
-          label="Realized P&L"
-          value={fmt(totalRealizedPnl)}
-          variant={totalRealizedPnl >= 0 ? 'gain' : 'loss'}
-          size="lg"
-          sub={`${closedTrades.length} closed · ${fmtPct(realizedPct)} vs cost`}
-        />
-        <MetricCard
-          label="Open P&L"
-          value={fmt(openPnl)}
-          variant={openPnl >= 0 ? 'gain' : 'loss'}
-          size="lg"
-          sub={`${positions.filter(p => p.ticker !== 'CASH').length} positions`}
-          sub2="All open positions"
-        />
-        <MetricCard
-          label="Win Rate"
-          value={`${(winRate * 100).toFixed(1)}%`}
-          variant={winRate >= 0.5 ? 'gain' : 'loss'}
-          size="lg"
-          sub={`${tradeResults.filter(t => t.pnl > 0).length}W / ${tradeResults.filter(t => t.pnl < 0).length}L${streak.count > 0 ? ` · ${streak.count}${streak.type === 'win' ? 'W' : 'L'} streak` : ''}`}
-          sub2={bestWorstDay ? `Best day: ${fmt(bestWorstDay.best)}` : undefined}
-        />
-        <MetricCard
-          label="Avg P&L %"
-          value={`${avgPnlPct >= 0 ? '+' : ''}${avgPnlPct.toFixed(2)}%`}
-          variant={avgPnlPct >= 0 ? 'gain' : 'loss'}
-          size="lg"
-          sub="per trade"
-          sub2={avgHold !== null ? `Avg ${Math.round(avgHold)}d hold` : undefined}
-        />
+        <div className={totalRealizedPnl >= 0 ? 'rounded-xl shadow-[0_0_32px_rgba(0,230,118,0.07)]' : 'rounded-xl shadow-[0_0_32px_rgba(255,61,87,0.07)]'}>
+          <MetricCard
+            label="Realized P&L"
+            value={fmt(totalRealizedPnl)}
+            variant={totalRealizedPnl >= 0 ? 'gain' : 'loss'}
+            size="lg"
+            sub={`${closedTrades.length} closed · ${fmtPct(realizedPct)} vs cost`}
+          />
+        </div>
+        <div className={openPnl >= 0 ? 'rounded-xl shadow-[0_0_32px_rgba(0,230,118,0.07)]' : 'rounded-xl shadow-[0_0_32px_rgba(255,61,87,0.07)]'}>
+          <MetricCard
+            label="Open P&L"
+            value={fmt(openPnl)}
+            variant={openPnl >= 0 ? 'gain' : 'loss'}
+            size="lg"
+            sub={`${positions.filter(p => p.ticker !== 'CASH').length} positions`}
+            sub2="All open positions"
+          />
+        </div>
+        <div className={winRate >= 0.5 ? 'rounded-xl shadow-[0_0_32px_rgba(0,230,118,0.07)]' : 'rounded-xl shadow-[0_0_32px_rgba(255,61,87,0.07)]'}>
+          <MetricCard
+            label="Win Rate"
+            value={`${(winRate * 100).toFixed(1)}%`}
+            variant={winRate >= 0.5 ? 'gain' : 'loss'}
+            size="lg"
+            sub={`${tradeResults.filter(t => t.pnl > 0).length}W / ${tradeResults.filter(t => t.pnl < 0).length}L${streak.count > 0 ? ` · ${streak.count}${streak.type === 'win' ? 'W' : 'L'} streak` : ''}`}
+            sub2={bestWorstDay ? `Best day: ${fmt(bestWorstDay.best)}` : undefined}
+          />
+        </div>
+        <div className={avgPnlPct >= 0 ? 'rounded-xl shadow-[0_0_32px_rgba(0,230,118,0.07)]' : 'rounded-xl shadow-[0_0_32px_rgba(255,61,87,0.07)]'}>
+          <MetricCard
+            label="Avg P&L %"
+            value={`${avgPnlPct >= 0 ? '+' : ''}${avgPnlPct.toFixed(2)}%`}
+            variant={avgPnlPct >= 0 ? 'gain' : 'loss'}
+            size="lg"
+            sub="per trade"
+            sub2={avgHold !== null ? `Avg ${Math.round(avgHold)}d hold` : undefined}
+          />
+        </div>
       </div>
 
       {/* Secondary metrics */}
       <div className="flex items-center gap-3 mb-3 mt-5">
-        <span className="text-xs font-semibold text-text-muted tracking-[0.14em] uppercase whitespace-nowrap">Risk & Benchmarks</span>
-        <div className="flex-1 h-px bg-gradient-to-r from-border/40 to-transparent" />
+        <span className="text-[11px] font-bold text-text-primary tracking-[0.16em] uppercase border-l-2 border-accent pl-2.5 whitespace-nowrap">Risk & Benchmarks</span>
+        <div className="flex-1 h-px bg-gradient-to-r from-border/60 to-transparent" />
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <MetricCard
@@ -485,8 +493,7 @@ export default function DashboardPage() {
       {openTrades.length > 0 && (
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
-            <span className="w-0.5 h-3.5 rounded-full bg-accent/50 inline-block" />
-            <span className="text-xs font-semibold text-text-secondary tracking-[0.08em] uppercase">Latest Open Trades</span>
+            <span className="text-[11px] font-bold text-text-primary tracking-[0.16em] uppercase border-l-2 border-accent pl-2.5">Latest Open Trades</span>
           </div>
           <div className="border border-default rounded-xl overflow-hidden overflow-x-auto">
             <table className="w-full text-xs">
@@ -563,79 +570,72 @@ export default function DashboardPage() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Edge Score */}
+        <>
+          {/* Edge Score — full-width hero strip */}
           {edgeScore && (
-            <div className="bg-surface rounded-xl border border-default/50">
-              <div className="px-5 pt-5 pb-1 flex items-center gap-2">
-                <span className="w-0.5 h-3.5 rounded-full bg-accent/50 inline-block" />
-        <span className="text-xs font-semibold text-text-secondary tracking-[0.08em] uppercase">Edge Score</span>
-                <div className="relative group inline-flex ml-0.5">
-                  <span className="text-text-muted/50 text-xs cursor-help select-none">ⓘ</span>
-                  <div className="absolute left-0 bottom-full mb-2 w-64 text-[11px] text-text-secondary bg-surface2 border border-default rounded-lg px-3 py-2.5 shadow-xl z-50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none leading-relaxed whitespace-normal">
-                    Composite score across 6 metrics: Win %, Profit Factor, Consistency, Max Drawdown, Avg Win/Loss, and Recovery Factor. Each is normalized to 0–100.
-                  </div>
-                </div>
-              </div>
-              <ResponsiveContainer width="100%" height={220}>
-                <RadarChart data={edgeScore.axes} cx="50%" cy="50%" outerRadius="72%">
-                  <defs>
-                    <linearGradient id="radarSheen" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%"   stopColor="rgba(255,51,51,0.15)" />
-                      <stop offset="42%"  stopColor="rgba(255,51,51,0.35)" />
-                      <stop offset="50%"  stopColor="rgba(255,160,140,0.65)" />
-                      <stop offset="58%"  stopColor="rgba(255,51,51,0.35)" />
-                      <stop offset="100%" stopColor="rgba(255,51,51,0.15)" />
-                      <animateTransform
-                        attributeName="gradientTransform"
-                        type="rotate"
-                        from="0 0.5 0.5"
-                        to="360 0.5 0.5"
-                        dur="5s"
-                        repeatCount="indefinite"
-                      />
-                    </linearGradient>
-                  </defs>
-                  <PolarGrid stroke="rgba(255,255,255,0.06)" />
-                  <PolarAngleAxis
-                    dataKey="axis"
-                    tick={{ fill: '#8892a4', fontSize: 10, fontFamily: 'monospace' }}
-                  />
-                  <Radar
-                    dataKey="value"
-                    stroke="#ff4444"
-                    fill="url(#radarSheen)"
-                    fillOpacity={1}
-                    dot={{ r: 3, fill: '#ff6666', strokeWidth: 0 }}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
-              <div className="border-t border-default/40 px-5 py-4 flex items-center gap-5">
+            <div className="relative bg-surface rounded-xl border border-default/50 overflow-hidden p-5 mb-8">
+              <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_50%_100%_at_0%_50%,rgba(255,51,51,0.04),transparent)]" />
+              <div className="relative flex items-center gap-6">
+                {/* Radar */}
                 <div className="flex-shrink-0">
-                  <div className="text-[10px] text-text-muted mb-0.5">Your Edge Score</div>
-                  <div className="text-3xl font-bold font-mono text-text-primary leading-none">{edgeScore.composite.toFixed(2)}</div>
-                  <div className="text-xs font-semibold mt-1" style={{ color: getEdgeRank(edgeScore.composite).color }}>
+                  <RadarChart width={180} height={180} data={edgeScore.axes} cx="50%" cy="50%" outerRadius="72%">
+                    <defs>
+                      <linearGradient id="radarSheen" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%"   stopColor="rgba(255,51,51,0.15)" />
+                        <stop offset="42%"  stopColor="rgba(255,51,51,0.35)" />
+                        <stop offset="50%"  stopColor="rgba(255,160,140,0.65)" />
+                        <stop offset="58%"  stopColor="rgba(255,51,51,0.35)" />
+                        <stop offset="100%" stopColor="rgba(255,51,51,0.15)" />
+                        <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="5s" repeatCount="indefinite" />
+                      </linearGradient>
+                    </defs>
+                    <PolarGrid stroke="rgba(255,255,255,0.06)" />
+                    <PolarAngleAxis dataKey="axis" tick={{ fill: '#8892a4', fontSize: 9, fontFamily: 'monospace' }} />
+                    <Radar dataKey="value" stroke="#ff4444" fill="url(#radarSheen)" fillOpacity={1} dot={{ r: 3, fill: '#ff6666', strokeWidth: 0 }} />
+                  </RadarChart>
+                </div>
+                {/* Center: score + rank + bar */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="text-[10px] font-semibold text-text-muted tracking-[0.16em] uppercase">Your Edge Score</div>
+                    <div className="relative group inline-flex">
+                      <span className="text-text-muted/50 text-xs cursor-help select-none">ⓘ</span>
+                      <div className="absolute left-0 bottom-full mb-2 w-64 text-[11px] text-text-secondary bg-surface2 border border-default rounded-lg px-3 py-2.5 shadow-xl z-50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none leading-relaxed whitespace-normal">
+                        Composite score across 6 metrics: Win %, Profit Factor, Consistency, Max Drawdown, Avg Win/Loss, and Recovery Factor. Each is normalized to 0–100.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-5xl font-bold font-mono text-text-primary leading-none mb-1">{edgeScore.composite.toFixed(1)}</div>
+                  <div className="text-sm font-bold mb-4" style={{ color: getEdgeRank(edgeScore.composite).color }}>
                     {getEdgeRank(edgeScore.composite).label}
                   </div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="relative h-1.5 rounded-full overflow-hidden" style={{ background: 'linear-gradient(to right, #ff3d57 0%, #fbbf24 50%, #00e676 100%)' }}>
+                  <div className="relative h-1.5 rounded-full overflow-hidden max-w-xs" style={{ background: 'linear-gradient(to right, #ff3d57 0%, #fbbf24 50%, #00e676 100%)' }}>
                     <div
                       className="absolute w-3 h-3 rounded-full bg-white shadow border-2 border-surface"
                       style={{ left: `${Math.min(Math.max(edgeScore.composite, 1.5), 98.5)}%`, top: '50%', transform: 'translate(-50%, -50%)' }}
                     />
                   </div>
-                  <div className="flex justify-between text-[9px] text-text-muted/60 mt-1.5 font-mono">
+                  <div className="flex justify-between text-[9px] text-text-muted/60 mt-1.5 font-mono max-w-xs">
                     <span>0</span><span>20</span><span>40</span><span>60</span><span>80</span><span>100</span>
                   </div>
+                </div>
+                {/* Right: 6-axis breakdown */}
+                <div className="hidden md:grid grid-cols-3 gap-x-6 gap-y-3 flex-shrink-0 border-l border-default/40 pl-6">
+                  {edgeScore.axes.map(a => (
+                    <div key={a.axis} className="text-right">
+                      <div className="text-[9px] text-text-muted uppercase tracking-widest mb-0.5">{a.axis}</div>
+                      <div className="text-sm font-bold font-mono text-text-primary">{a.value}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-surface p-6 rounded-xl border border-default/50">
             <div className="flex items-center gap-2 mb-4">
-              <span className="w-0.5 h-3.5 rounded-full bg-accent/50 inline-block" />
-        <span className="text-xs font-semibold text-text-secondary tracking-[0.08em] uppercase">Cumulative P&L</span>
+              <span className="text-[11px] font-bold text-text-primary tracking-[0.16em] uppercase border-l-2 border-accent pl-2.5">Cumulative P&L</span>
             </div>
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={cumulativeData}>
@@ -661,10 +661,9 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
 
-          <div className="bg-surface p-6 rounded-xl border border-default/50">
+          <div className="bg-surface2/70 p-6 rounded-xl border border-default/50">
             <div className="flex items-center gap-2 mb-4">
-              <span className="w-0.5 h-3.5 rounded-full bg-accent/50 inline-block" />
-        <span className="text-xs font-semibold text-text-secondary tracking-[0.08em] uppercase">Monthly P&L</span>
+              <span className="text-[11px] font-bold text-text-primary tracking-[0.16em] uppercase border-l-2 border-accent pl-2.5">Monthly P&L</span>
             </div>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={monthlyData}>
@@ -683,8 +682,7 @@ export default function DashboardPage() {
 
           <div className="bg-surface p-6 rounded-xl border border-default/50">
             <div className="flex items-center gap-2 mb-4">
-              <span className="w-0.5 h-3.5 rounded-full bg-accent/50 inline-block" />
-        <span className="text-xs font-semibold text-text-secondary tracking-[0.08em] uppercase">Win / Loss Split</span>
+              <span className="text-[11px] font-bold text-text-primary tracking-[0.16em] uppercase border-l-2 border-accent pl-2.5">Win / Loss Split</span>
             </div>
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
@@ -692,6 +690,12 @@ export default function DashboardPage() {
                   <Cell fill={CHART_COLORS.gain} />
                   <Cell fill={CHART_COLORS.loss} />
                 </Pie>
+                <text x="50%" y="46%" textAnchor="middle" dominantBaseline="middle" fill="#dce4f2" fontSize={22} fontWeight={700} fontFamily="JetBrains Mono, monospace">
+                  {(winRate * 100).toFixed(0)}%
+                </text>
+                <text x="50%" y="60%" textAnchor="middle" dominantBaseline="middle" fill="#8892a4" fontSize={9} fontFamily="JetBrains Mono, monospace" letterSpacing="2">
+                  WIN RATE
+                </text>
                 <Tooltip content={<PieTooltip />} />
               </PieChart>
             </ResponsiveContainer>
@@ -701,10 +705,9 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="bg-surface p-6 rounded-xl border border-default/50">
+          <div className="bg-surface2/70 p-6 rounded-xl border border-default/50">
             <div className="flex items-center gap-2 mb-4">
-              <span className="w-0.5 h-3.5 rounded-full bg-accent/50 inline-block" />
-        <span className="text-xs font-semibold text-text-secondary tracking-[0.08em] uppercase">P&L by Strategy</span>
+              <span className="text-[11px] font-bold text-text-primary tracking-[0.16em] uppercase border-l-2 border-accent pl-2.5">P&L by Strategy</span>
             </div>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={strategyData} layout="vertical">
@@ -722,10 +725,9 @@ export default function DashboardPage() {
           </div>
 
           {tickerData.length > 0 && (
-            <div className="bg-surface p-6 rounded-xl lg:col-span-2">
+            <div className="bg-surface p-6 rounded-xl border border-default/50 lg:col-span-2">
               <div className="flex items-center gap-2 mb-4">
-                <span className="w-0.5 h-3.5 rounded-full bg-accent/50 inline-block" />
-        <span className="text-xs font-semibold text-text-secondary tracking-[0.08em] uppercase">P&L by Ticker</span>
+                <span className="text-[11px] font-bold text-text-primary tracking-[0.16em] uppercase border-l-2 border-accent pl-2.5">P&L by Ticker</span>
               </div>
               <ResponsiveContainer width="100%" height={Math.max(160, tickerData.length * 28)}>
                 <BarChart data={tickerData} layout="vertical">
@@ -745,10 +747,9 @@ export default function DashboardPage() {
 
           {/* Common Mistakes */}
           {mistakeData.length > 0 && (
-            <div className="bg-surface p-6 rounded-xl lg:col-span-2">
+            <div className="bg-surface2/70 p-6 rounded-xl border border-default/50 lg:col-span-2">
               <div className="flex items-center gap-2 mb-5">
-                <span className="w-0.5 h-3.5 rounded-full bg-accent/50 inline-block" />
-        <span className="text-xs font-semibold text-text-secondary tracking-[0.08em] uppercase">Common Mistakes</span>
+                <span className="text-[11px] font-bold text-text-primary tracking-[0.16em] uppercase border-l-2 border-accent pl-2.5">Common Mistakes</span>
                 <span className="text-[10px] text-text-muted font-mono ml-1">
                   {trades.filter(t => (t.mistake_tags ?? []).length > 0).length} tagged trade{trades.filter(t => (t.mistake_tags ?? []).length > 0).length !== 1 ? 's' : ''}
                 </span>
@@ -781,6 +782,7 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+        </>
       )}
     </div>
   )
