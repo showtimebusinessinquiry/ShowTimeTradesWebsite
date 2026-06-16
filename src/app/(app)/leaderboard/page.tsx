@@ -218,6 +218,8 @@ export default function LeaderboardPage() {
     'from-amber-600/30 via-amber-600/5 to-transparent',
   ]
 
+  const podiumOrder = userStats.length >= 3 ? [1, 0, 2] : userStats.length === 2 ? [1, 0] : [0]
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
       <div className="w-8 h-8 border-2 border-accent/20 border-t-accent rounded-full animate-spin" />
@@ -260,53 +262,74 @@ USING (true);`}</pre>
 
       {/* Podium — top 3 */}
       {activeTab === 'rankings' && userStats.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
-          {userStats.slice(0, 3).map((u, i) => (
-            <div key={u.username} className="relative rounded-xl border border-default/50 bg-surface overflow-hidden p-4">
-              <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r ${topLinePodium[i]}`} />
-              <div className="flex items-center justify-between mb-2">
-                <span className={`font-mono text-sm font-bold ${medalColor[i]}`}>#{i + 1}</span>
-                <span className="text-[10px] text-text-muted font-mono">
-                  {u.closedTrades > 0 ? Math.round(u.wins / u.closedTrades * 100) : 0}% win rate
-                </span>
-              </div>
-              <div className="font-semibold text-sm text-text-primary mb-1">
-                <button
-                  onClick={() => setSelectedUsername(u.username)}
-                  className="hover:underline hover:text-text-primary transition-colors cursor-pointer"
+        <div className="relative mb-8">
+          <div className="absolute inset-x-0 -top-8 h-64 pointer-events-none bg-[radial-gradient(ellipse_70%_50%_at_50%_0%,rgba(255,51,51,0.03),transparent)]" />
+          <div className="relative grid grid-cols-1 sm:grid-cols-3 gap-3 sm:items-end">
+            {podiumOrder.map((statIdx) => {
+              const u = userStats[statIdx]
+              if (!u) return null
+              const isFirst = statIdx === 0
+              const isSecond = statIdx === 1
+              return (
+                <div
+                  key={u.username}
+                  className={`relative overflow-hidden ${
+                    isFirst
+                      ? 'rounded-2xl border border-yellow-400/20 bg-surface p-5 shadow-[0_0_40px_rgba(250,204,21,0.10)]'
+                      : isSecond
+                      ? 'rounded-xl border border-slate-400/15 bg-surface p-4 shadow-[0_0_28px_rgba(148,163,184,0.07)]'
+                      : 'rounded-xl border border-amber-700/15 bg-surface p-4 shadow-[0_0_28px_rgba(180,83,9,0.07)]'
+                  }`}
                 >
-                  @{u.username}
-                </button>
-              </div>
-              <div className={`font-mono font-bold text-xl ${u.pnl >= 0 ? 'text-gain' : 'text-loss'}`}>
-                {fmtPnl(u.pnl)}
-              </div>
-              <div className="text-[10px] text-text-muted mt-1">{u.trades} trades logged</div>
-              {u.edgeScore !== null && (
-                <div className="mt-2.5 pt-2.5 border-t border-default/30 flex items-center justify-between">
-                  <span className="text-[10px] text-text-muted">Edge Score</span>
-                  <div className="flex items-center gap-2">
-                    <div className="relative w-16 h-1 rounded-full overflow-hidden" style={{ background: 'linear-gradient(to right, #ff3d57 0%, #fbbf24 50%, #00e676 100%)' }}>
-                      <div className="absolute w-2 h-2 rounded-full bg-white shadow border border-surface/80"
-                        style={{ left: `${Math.min(Math.max(u.edgeScore, 2), 98)}%`, top: '50%', transform: 'translate(-50%, -50%)' }} />
-                    </div>
-                    <span className="font-mono text-xs font-bold text-text-primary">{u.edgeScore.toFixed(1)}</span>
-                    <span className="text-[10px] font-semibold" style={{ color: getEdgeRank(u.edgeScore).color }}>
-                      {getEdgeRank(u.edgeScore).label}
+                  <div className={`absolute top-0 left-0 right-0 bg-gradient-to-r ${topLinePodium[statIdx]} ${isFirst ? 'h-0.5' : 'h-px'}`} />
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`font-mono font-bold ${isFirst ? 'text-2xl text-yellow-400' : isSecond ? 'text-lg text-slate-300' : 'text-lg text-amber-600'}`}>
+                      #{statIdx + 1}
+                    </span>
+                    <span className="text-[10px] text-text-muted font-mono">
+                      {u.closedTrades > 0 ? Math.round(u.wins / u.closedTrades * 100) : 0}% win rate
                     </span>
                   </div>
+                  <div className="font-semibold text-sm text-text-primary mb-1">
+                    <button
+                      onClick={() => setSelectedUsername(u.username)}
+                      className="hover:underline hover:text-text-primary transition-colors cursor-pointer"
+                    >
+                      @{u.username}
+                    </button>
+                  </div>
+                  <div className={`font-mono font-bold ${isFirst ? 'text-2xl' : 'text-xl'} ${u.pnl >= 0 ? 'text-gain' : 'text-loss'}`}>
+                    {fmtPnl(u.pnl)}
+                  </div>
+                  <div className="text-[10px] text-text-muted mt-1">{u.trades} trades logged</div>
+                  {u.edgeScore !== null && (
+                    <div className="mt-2.5 pt-2.5 border-t border-default/30 flex items-center justify-between">
+                      <span className="text-[10px] text-text-muted">Edge Score</span>
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-16 h-1 rounded-full overflow-hidden" style={{ background: 'linear-gradient(to right, #ff3d57 0%, #fbbf24 50%, #00e676 100%)' }}>
+                          <div className="absolute w-2 h-2 rounded-full bg-white shadow border border-surface/80"
+                            style={{ left: `${Math.min(Math.max(u.edgeScore, 2), 98)}%`, top: '50%', transform: 'translate(-50%, -50%)' }} />
+                        </div>
+                        <span className="font-mono text-xs font-bold text-text-primary">{u.edgeScore.toFixed(1)}</span>
+                        <span className="text-[10px] font-semibold" style={{ color: getEdgeRank(u.edgeScore).color }}>
+                          {getEdgeRank(u.edgeScore).label}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
+              )
+            })}
+          </div>
         </div>
       )}
 
       {/* Full rankings table (if > 3 users) */}
       {activeTab === 'rankings' && userStats.length > 3 && (
         <div className="mb-8 rounded-xl border border-default/50 overflow-hidden bg-surface">
-          <div className="px-4 py-2.5 border-b border-default/40 bg-surface2/50">
-            <span className="text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase">All Rankings</span>
+          <div className="px-4 py-2.5 border-b border-default/40 bg-surface2/50 flex items-center gap-3">
+            <span className="text-[11px] font-bold text-text-primary tracking-[0.16em] uppercase border-l-2 border-accent pl-2.5 whitespace-nowrap">All Rankings</span>
+            <div className="flex-1 h-px bg-gradient-to-r from-border/60 to-transparent" />
           </div>
           <table className="w-full text-xs">
             <thead>
@@ -321,7 +344,11 @@ USING (true);`}</pre>
             </thead>
             <tbody className="divide-y divide-default/20">
               {userStats.map((u, i) => (
-                <tr key={u.username} className="hover:bg-surface2/40 transition-colors">
+                <tr key={u.username} className={`hover:bg-surface2/40 transition-colors ${
+                  i === 0 ? 'border-l-2 border-yellow-400/50 bg-yellow-400/[0.025]' :
+                  i === 1 ? 'border-l-2 border-slate-400/30' :
+                  i === 2 ? 'border-l-2 border-amber-600/30' : ''
+                }`}>
                   <td className="px-4 py-2.5 font-mono text-text-muted">#{i + 1}</td>
                   <td className="px-4 py-2.5 font-semibold text-text-primary">
                     <button
@@ -442,8 +469,9 @@ USING (true);`}</pre>
       {/* P/L Chart */}
       {activeTab === 'chart' && (
         <div className="rounded-xl border border-default/50 bg-surface p-4">
-          <div className="text-[10px] font-semibold text-text-muted tracking-[0.14em] uppercase mb-4">
-            Cumulative P&amp;L — All Traders
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-[11px] font-bold text-text-primary tracking-[0.16em] uppercase border-l-2 border-accent pl-2.5 whitespace-nowrap">Cumulative P&amp;L — All Traders</span>
+            <div className="flex-1 h-px bg-gradient-to-r from-border/60 to-transparent" />
           </div>
           {cumulativeChartData.length < 2 ? (
             <div className="text-center text-text-muted text-xs py-16">Not enough closed trades to display</div>
@@ -492,7 +520,7 @@ USING (true);`}</pre>
           <div className="fixed inset-y-0 right-0 w-96 bg-surface border-l border-default z-50 flex flex-col overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-default">
-              <span className="font-display font-semibold text-text-primary">@{selectedUsername}</span>
+              <span className="font-display text-base font-bold text-text-primary">@{selectedUsername}</span>
               <button
                 onClick={() => setSelectedUsername(null)}
                 className="text-text-muted hover:text-text-primary text-xl leading-none"
@@ -509,35 +537,40 @@ USING (true);`}</pre>
               return (
                 <div className="flex-1 overflow-y-auto">
                   {/* Stat chips */}
-                  <div className="grid grid-cols-2 gap-3 px-6 py-4 border-b border-default">
-                    <div>
-                      <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Total P&L</div>
-                      <div className={`font-mono text-sm font-semibold ${stats.pnl >= 0 ? 'text-gain' : 'text-loss'}`}>
-                        {stats.pnl >= 0 ? '+' : ''}{stats.pnl.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+                  <div className="grid grid-cols-2 gap-2 px-6 py-4 border-b border-default">
+                    <div className="bg-surface2/60 rounded-lg px-3 py-2.5">
+                      <div className="text-[9px] text-text-muted uppercase tracking-widest mb-1">Total P&L</div>
+                      <div className={`font-mono text-sm font-bold ${stats.pnl >= 0 ? 'text-gain' : 'text-loss'}`}>
+                        {fmtPnl(stats.pnl)}
                       </div>
                     </div>
-                    <div>
-                      <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Win Rate</div>
-                      <div className="font-mono text-sm font-semibold text-text-primary">
+                    <div className="bg-surface2/60 rounded-lg px-3 py-2.5">
+                      <div className="text-[9px] text-text-muted uppercase tracking-widest mb-1">Win Rate</div>
+                      <div className="font-mono text-sm font-bold text-text-primary">
                         {stats.closedTrades > 0 ? `${(stats.wins / stats.closedTrades * 100).toFixed(1)}%` : '—'}
                       </div>
                     </div>
-                    <div>
-                      <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Closed Trades</div>
-                      <div className="font-mono text-sm font-semibold text-text-primary">{stats.closedTrades}</div>
+                    <div className="bg-surface2/60 rounded-lg px-3 py-2.5">
+                      <div className="text-[9px] text-text-muted uppercase tracking-widest mb-1">Closed Trades</div>
+                      <div className="font-mono text-sm font-bold text-text-primary">{stats.closedTrades}</div>
                     </div>
-                    <div>
-                      <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Edge Score</div>
-                      <div className="font-mono text-sm font-semibold text-text-primary">
+                    <div className="bg-surface2/60 rounded-lg px-3 py-2.5">
+                      <div className="text-[9px] text-text-muted uppercase tracking-widest mb-1">Edge Score</div>
+                      <div className="font-mono text-sm font-bold" style={{ color: stats.edgeScore != null ? getEdgeRank(stats.edgeScore).color : '#607898' }}>
                         {stats.edgeScore != null ? stats.edgeScore.toFixed(1) : '—'}
                       </div>
+                      {stats.edgeScore != null && (
+                        <div className="text-[9px] font-semibold mt-0.5" style={{ color: getEdgeRank(stats.edgeScore).color }}>
+                          {getEdgeRank(stats.edgeScore).label}
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   {/* Trade list or private message */}
                   {isPublic ? (
                     <div className="px-6 py-4">
-                      <div className="text-[10px] text-text-muted uppercase tracking-wide mb-3">Trade Log</div>
+                      <span className="text-[11px] font-bold text-text-primary tracking-[0.16em] uppercase border-l-2 border-accent pl-2.5">Trade Log</span>
                       {userTrades.length === 0 ? (
                         <p className="text-xs text-text-muted">No closed trades.</p>
                       ) : (
