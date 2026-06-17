@@ -127,6 +127,22 @@ export default function CalendarPage() {
       .reduce((sum, [, ts]) => sum + ts.length, 0)
   }, [tradesByDate, year, month])
 
+  const maxAbsPnlMonth = useMemo(() => {
+    const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`
+    const vals = Object.entries(pnlByDate)
+      .filter(([date]) => date.startsWith(prefix))
+      .map(([, pnl]) => Math.abs(pnl ?? 0))
+    return vals.length > 0 ? Math.max(...vals) : 1
+  }, [pnlByDate, year, month])
+
+  const monthTradingDays = useMemo(() => {
+    const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`
+    return Object.entries(pnlByDate)
+      .filter(([date, pnl]) => date.startsWith(prefix) && pnl != null)
+      .map(([date, pnl]) => ({ date, pnl: pnl as number }))
+      .sort((a, b) => b.pnl - a.pnl)
+  }, [pnlByDate, year, month])
+
   const strategyOptions = useMemo(() => {
     const seen = new Set<string>()
     trades.forEach(t => seen.add(t.strategy))
@@ -265,19 +281,27 @@ export default function CalendarPage() {
                       }}
                       className={[
                         'min-h-[88px] p-2 border-b border-r relative transition-colors',
-                        hasActivity && !isSelected && !allOpen && (pnl ?? 0) > 0 ? 'border-gain/30 bg-gain/10' :
-                        hasActivity && !isSelected && !allOpen && (pnl ?? 0) < 0 ? 'border-loss/30 bg-loss/10' :
-                        hasActivity && !isSelected && allOpen ? 'border-blue-400/30 bg-blue-400/5' :
+                        hasActivity && !isSelected && !allOpen && (pnl ?? 0) > 0 ? 'border-gain/30' :
+                        hasActivity && !isSelected && !allOpen && (pnl ?? 0) < 0 ? 'border-loss/30' :
+                        hasActivity && !isSelected && allOpen ? 'border-blue-400/30' :
                         'border-default/20',
                         !isInMonth ? 'bg-bg' : '',
                         isWeekend && isInMonth && !hasActivity && !isSelected ? 'bg-surface2/40' : '',
                         isSelected ? 'bg-accent/8 ring-1 ring-inset ring-accent/30 border-accent/20' : '',
                         isInMonth ? 'cursor-pointer' : '',
-                        hasActivity && !isSelected && !allOpen && (pnl ?? 0) > 0 ? 'hover:bg-gain/15' : '',
-                        hasActivity && !isSelected && !allOpen && (pnl ?? 0) < 0 ? 'hover:bg-loss/15' : '',
-                        hasActivity && !isSelected && allOpen ? 'hover:bg-blue-400/10' : '',
-                        !hasActivity && isInMonth && !isSelected ? 'hover:bg-surface/40' : '',
+                        !hasActivity && isInMonth && !isSelected ? 'hover:bg-surface2/60' : '',
                       ].filter(Boolean).join(' ')}
+                      style={(() => {
+                        if (!isInMonth || isSelected) return {}
+                        if (allOpen && hasActivity) return { backgroundColor: 'rgba(96,165,250,0.06)' }
+                        if (pnl == null || !hasActivity) return {}
+                        const intensity = Math.min(0.06 + (Math.abs(pnl) / maxAbsPnlMonth) * 0.22, 0.28)
+                        return {
+                          backgroundColor: pnl > 0
+                            ? `rgba(0,230,118,${intensity.toFixed(3)})`
+                            : `rgba(255,61,87,${intensity.toFixed(3)})`
+                        }
+                      })()}
                     >
                       {isInMonth && (
                         <>
@@ -342,6 +366,32 @@ export default function CalendarPage() {
               {pnlByDate[selectedDate] != null ? fmtPnl(pnlByDate[selectedDate] as number) : 'OPEN'}
             </span>
           </div>
+          {(() => {
+            const dayPnl = pnlByDate[selectedDate]
+            if (dayPnl == null) return null
+            const rank = monthTradingDays.findIndex(d => d.date === selectedDate) + 1
+            const totalDays = monthTradingDays.length
+            if (rank === 0 || totalDays < 2) return null
+            const avgPnl = monthTradingDays.reduce((s, d) => s + d.pnl, 0) / totalDays
+            const vs = dayPnl - avgPnl
+            return (
+              <div className="px-5 py-2 border-b border-default/30 bg-surface2/30 flex items-center gap-5">
+                <span className="text-[10px] text-text-muted">
+                  <span className={`font-semibold font-mono ${rank <= 3 && dayPnl >= 0 ? 'text-gain' : rank >= totalDays - 2 && dayPnl < 0 ? 'text-loss' : 'text-text-secondary'}`}>
+                    #{rank}
+                  </span>
+                  {' '}of {totalDays} trading days this month
+                </span>
+                {Math.abs(vs) > 0.01 && (
+                  <span className="text-[10px] text-text-muted">
+                    vs avg: <span className={`font-semibold font-mono ${vs >= 0 ? 'text-gain' : 'text-loss'}`}>
+                      {vs >= 0 ? '+' : ''}{fmtPnl(vs)}
+                    </span>
+                  </span>
+                )}
+              </div>
+            )
+          })()}
           {selectedTrades.length === 0 ? (
             <div className="px-5 py-6 text-center text-xs text-text-muted">No trades match the current filters for this day.</div>
           ) : (

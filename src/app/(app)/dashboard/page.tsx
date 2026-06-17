@@ -37,7 +37,7 @@ const CHART_COLORS = {
   gain: '#00e676',
   loss: '#ff3d57',
   accent: '#ff4444',
-  muted: '#4a5568',
+  muted: '#8892a4',
   surface: '#1f2535',
 }
 
@@ -713,7 +713,7 @@ export default function DashboardPage() {
               <BarChart data={strategyData} layout="vertical">
                 <CartesianGrid stroke={CHART_COLORS.surface} strokeDasharray="2 4" horizontal={false} />
                 <XAxis type="number" tick={{ fill: CHART_COLORS.muted, fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={v => `$${v}`} />
-                <YAxis type="category" dataKey="strategy" tick={{ fill: CHART_COLORS.muted, fontSize: 9 }} tickLine={false} axisLine={false} width={90} />
+                <YAxis type="category" dataKey="strategy" tick={{ fill: CHART_COLORS.muted, fontSize: 10 }} tickLine={false} axisLine={false} width={95} />
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="pnl" name="P&L" radius={[0,2,2,0]}>
                   {strategyData.map((entry, index) => (
